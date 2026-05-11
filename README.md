@@ -22,25 +22,33 @@ Everything is controlled from a local web UI:
 ## Quick start
 
 ### Prerequisites
-- **Node.js 20+** — https://nodejs.org/
+- **Node.js 20+** — https://nodejs.org/ (works on macOS, Windows, Linux)
 - **FFmpeg** — required for video assembly
-  - Windows: `winget install Gyan.FFmpeg` (recommended)
-  - macOS: `brew install ffmpeg`
-  - Linux: `sudo apt install ffmpeg`
-  - Or set `FFMPEG_PATH` in `/settings` to point at the binary
+  - **macOS:** `brew install ffmpeg` (install Homebrew first from https://brew.sh)
+  - **Windows:** `winget install Gyan.FFmpeg` (open a fresh terminal after install)
+  - **Linux:** `sudo apt install ffmpeg`
+  - Or set `FFMPEG_PATH` in `/settings` to point at the binary directly
 
 ### Install + run
 ```bash
-# Windows: just double-click these
-install.bat        # one-time, installs npm dependencies
-start.bat          # daily — starts dev server and opens browser
+# macOS / Linux: just double-click these
+install.command    # one-time, installs npm dependencies
+start.command      # daily — starts dev server and opens browser
 
-# Cross-platform alternative
+# Windows: same idea, .bat instead of .command
+install.bat
+start.bat
+
+# Cross-platform alternative (any OS)
 npm install
 npm run dev
 ```
 
 Then open http://localhost:3000.
+
+> **First time on macOS?** When you double-click a `.command` file, macOS Gatekeeper
+> may block it. Right-click the file → **Open** → confirm. After that, double-click works
+> normally. If you see "Operation not permitted", run `chmod +x *.command` in Terminal first.
 
 ### Required keys
 Open `/settings`. The top section, **Required API Keys**, shows the two keys you must
@@ -81,13 +89,20 @@ Every stage logs to the database AND streams to the UI in real time over SSE.
 ## Where files are stored
 
 - **Database** (settings, run records, logs):
-  `~/.conveyer-isabell/isabell.db` (~1 MB)
+  - macOS / Linux: `~/.conveyer-isabell/isabell.db`
+  - Windows: `C:\Users\YOU\.conveyer-isabell\isabell.db`
+  - ~1 MB
 - **Run outputs** (audio, images, animations, clips, final.mp4):
   - default: `~/.conveyer-isabell/runs/<run-folder>/`
   - configurable via `/settings → RUNS_OUTPUT_DIR`
 
-For convenience the project also has a `data/runs` Windows junction that mirrors the runs
-folder, so you can navigate to runs from the project directory too.
+For convenience the project also creates a symlink/junction at `data/runs` inside the
+project folder pointing to the actual runs directory, so you can navigate to outputs from
+either location.
+
+> **macOS:** the default folder starts with `.` which means Finder hides it. To see it:
+> in Finder press **⌘ + Shift + .** (period) to toggle hidden folders, or press
+> **⌘ + Shift + G** and paste `~/.conveyer-isabell/runs/`.
 
 ---
 

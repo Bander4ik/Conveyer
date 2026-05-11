@@ -48,12 +48,12 @@ const GROUPS: Group[] = [
       {
         key: "RUNS_OUTPUT_DIR",
         desc: "Absolute folder path for run outputs. Leave empty to use the default location inside your user profile. The settings database itself stays in the default location regardless of this setting.",
-        examples: "D:\\YouTube\\Conveyer-Runs  or  C:\\Users\\you\\Documents\\Runs",
+        examples: "Mac: /Users/you/Documents/Conveyer-Runs  ·  Windows: D:\\YouTube\\Conveyer-Runs",
       },
       {
         key: "FFMPEG_PATH",
-        desc: "Absolute path to ffmpeg.exe. Only needed if FFmpeg is not in your system PATH. The platform requires FFmpeg for video assembly.",
-        examples: "C:\\ffmpeg\\bin\\ffmpeg.exe  or leave empty if `ffmpeg` works in your terminal",
+        desc: "Absolute path to the FFmpeg binary. Only needed if FFmpeg is not in your system PATH. The platform requires FFmpeg for video assembly.",
+        examples: "Mac: /opt/homebrew/bin/ffmpeg (Apple Silicon) or /usr/local/bin/ffmpeg (Intel)  ·  Windows: C:\\ffmpeg\\bin\\ffmpeg.exe  ·  Leave empty if `ffmpeg` works in your terminal",
       },
     ],
   },
