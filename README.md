@@ -1,0 +1,137 @@
+# Conveyer Isabell
+
+Local pipeline platform for producing faceless AI YouTube videos in the style of channels
+like [The Sky Lab](https://www.youtube.com/@TheSkyLab-u4j) and
+[Interstellar Dreams](https://www.youtube.com/@InterstellarDreams-w5g):
+**script → scenes → voiceover + visuals → final MP4**.
+
+> 👋 **Brand new and don't know what npm / Node / API keys are?**
+> Read [SETUP.md](./SETUP.md) — a non-technical step-by-step install guide that walks you
+> through everything from zero. Come back to this README once you have the platform running.
+
+Everything is controlled from a local web UI:
+
+- **/** — paste a script and run the pipeline
+- **/runs** — history of all runs
+- **/runs/[id]** — live status + log stream (SSE)
+- **/prompts** — edit the system prompts (scene splitting, image style, motion style)
+- **/settings** — API keys, model picks, performance tuning
+
+---
+
+## Quick start
+
+### Prerequisites
+- **Node.js 20+** — https://nodejs.org/
+- **FFmpeg** — required for video assembly
+  - Windows: `winget install Gyan.FFmpeg` (recommended)
+  - macOS: `brew install ffmpeg`
+  - Linux: `sudo apt install ffmpeg`
+  - Or set `FFMPEG_PATH` in `/settings` to point at the binary
+
+### Install + run
+```bash
+# Windows: just double-click these
+install.bat        # one-time, installs npm dependencies
+start.bat          # daily — starts dev server and opens browser
+
+# Cross-platform alternative
+npm install
+npm run dev
+```
+
+Then open http://localhost:3000.
+
+### Required keys
+Open `/settings`. The top section, **Required API Keys**, shows the two keys you must
+provide before anything works:
+
+1. **`GOOGLE_API_KEY`** — Google AI Studio (Gemini). Free tier is enough for testing.
+   Get one at https://aistudio.google.com/app/apikey
+2. **`LABS69_API_KEY`** — 69labs.vip. Single subscription covers TTS + images + video animation.
+   Sign up at https://69labs.vip, copy the key from your account.
+
+That's it. All other settings have sensible defaults.
+
+---
+
+## Pipeline architecture
+
+```
+script
+  │
+  ▼
+[1] scene_split   (Gemini / Claude → JSON array of scenes)
+  │  each scene: { text, visual_prompt, duration_hint_sec }
+  ▼
+[2] for each scene, in parallel (with concurrency limits):
+       ├─ TTS (ElevenLabs via 69labs / OpenAI) → mp3
+       ├─ image (nano-banana-pro / imagen-4 / flux) → png
+       └─ img2vid (Veo / Kling) → mp4 (only for scenes selected by ratio + distribution)
+  │
+  ▼
+[3] assemble (FFmpeg) — every (image or video) + audio → clip with Ken-Burns or
+    live motion, then xfade all clips into final.mp4
+```
+
+Every stage logs to the database AND streams to the UI in real time over SSE.
+
+---
+
+## Where files are stored
+
+- **Database** (settings, run records, logs):
+  `~/.conveyer-isabell/isabell.db` (~1 MB)
+- **Run outputs** (audio, images, animations, clips, final.mp4):
+  - default: `~/.conveyer-isabell/runs/<run-folder>/`
+  - configurable via `/settings → RUNS_OUTPUT_DIR`
+
+For convenience the project also has a `data/runs` Windows junction that mirrors the runs
+folder, so you can navigate to runs from the project directory too.
+
+---
+
+## Editing the code
+
+Most behavior lives in these files:
+
+| Area | File |
+|---|---|
+| Scene splitter (Gemini / Claude) | `src/lib/services/scene-split.ts` |
+| TTS providers (69labs / ElevenLabs / OpenAI) | `src/lib/services/tts.ts` |
+| Image providers (69labs / Replicate / OpenAI / fal) | `src/lib/services/image-gen.ts` |
+| img2vid providers (Veo via 69labs / Kling via Replicate) | `src/lib/services/img2vid.ts` |
+| FFmpeg assembly (Ken-Burns, xfade) | `src/lib/services/video-assemble.ts` |
+| Pipeline orchestrator | `src/lib/pipeline.ts` |
+| Default prompts | `src/lib/prompts.ts` |
+| Defaults for `/settings` fields | `src/lib/settings.ts` |
+
+Every stage uses `log(runId, level, message, { stage, data })` — anything you log
+shows up in the live UI automatically.
+
+---
+
+## What's next (potential improvements)
+
+- Auto-generated subtitles burned in (Whisper or model-provided SRT).
+- Background music with auto-ducking under the narrator.
+- Batch mode: list of topics → N full videos overnight.
+- Direct upload to YouTube via Data API once a run finishes.
+- Keyframe chaining for img2vid (last frame of scene N = first frame of scene N+1) so
+  clips visually flow into each other.
+
+---
+
+## Security notes
+
+`~/.conveyer-isabell/isabell.db` stores your API keys in plaintext **locally on your
+machine**. The database is never pushed to git (`data/*.db` is in `.gitignore`) and it
+lives outside the project tree so it can't accidentally be committed.
+
+If you want multi-user deployment or stricter handling, move the secrets into a real vault.
+
+---
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
