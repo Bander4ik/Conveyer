@@ -242,6 +242,11 @@ const GROUPS: Group[] = [
         desc: "Crossfade length between scenes in seconds. 0.5 is a gentle blend. 1.0 is more cinematic. 0 disables transitions (instant cuts — much faster to render but looks abrupt).",
         examples: "0.5 = smooth  ·  1.0 = cinematic  ·  0 = no transitions",
       },
+      {
+        key: "SCENE_TAIL_SILENCE",
+        desc: "Silence appended to the END of every scene's audio before assembly. This is the ONLY way to get pauses BETWEEN scenes — ElevenLabs's TTS_AUTO_PAUSE only handles pauses INSIDE one TTS call (intra-scene), and since each scene is a separate TTS call, scene boundaries get no breath without this setting. Raise to 0.6–0.8 if the narration still feels rushed at sentence endings.",
+        examples: "0 = no padding (back-to-back)  ·  0.4 = natural breath (default)  ·  0.8 = reflective pacing",
+      },
     ],
   },
   {

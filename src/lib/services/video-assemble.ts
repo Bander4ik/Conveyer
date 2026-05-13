@@ -40,6 +40,7 @@ export async function assembleVideo(
   const resolution = getSetting("VIDEO_RESOLUTION") || "1920x1080";
   const fps = Number(getSetting("VIDEO_FPS") || "30");
   const transitionSec = Number(getSetting("TRANSITION_DURATION") || "0.5");
+  const tailSilence = Math.max(0, Number(getSetting("SCENE_TAIL_SILENCE") || "0.4"));
   const assembleConcurrency = Math.max(1, Number(getSetting("ASSEMBLE_CONCURRENCY") || "4"));
   const [w, h] = resolution.split("x").map(Number);
 
@@ -61,19 +62,22 @@ export async function assembleVideo(
           `clip_${String(item.scene.index).padStart(3, "0")}.mp4`
         );
         const audioDuration = await probeDuration(item.audio.filePath);
+        // Total clip duration = audio + silence padding at the end so consecutive
+        // scenes get a natural breath between them after concat.
+        const clipDuration = audioDuration + tailSilence;
         if (item.videoPath) {
-          await renderAnimatedClip(item.videoPath, item.audio.filePath, clipPath, w, h, fps, audioDuration);
+          await renderAnimatedClip(item.videoPath, item.audio.filePath, clipPath, w, h, fps, clipDuration, tailSilence);
         } else {
           const zoomDirection: "in" | "out" = Math.random() < 0.5 ? "in" : "out";
-          await renderKenBurnsClip(item.imagePath, item.audio.filePath, clipPath, w, h, fps, audioDuration, zoomDirection);
+          await renderKenBurnsClip(item.imagePath, item.audio.filePath, clipPath, w, h, fps, clipDuration, zoomDirection, tailSilence);
         }
         log(
           runId,
           "info",
-          `Clip #${item.scene.index} (${audioDuration.toFixed(1)}s, ${item.videoPath ? "img2vid" : "ken-burns"}) done`,
+          `Clip #${item.scene.index} (${audioDuration.toFixed(1)}s audio + ${tailSilence}s silence = ${clipDuration.toFixed(1)}s, ${item.videoPath ? "img2vid" : "ken-burns"}) done`,
           { stage: "assemble" }
         );
-        return { path: clipPath, durationSec: audioDuration, index: item.scene.index };
+        return { path: clipPath, durationSec: clipDuration, index: item.scene.index };
       })
     )
   );
@@ -121,7 +125,8 @@ function renderKenBurnsClip(
   h: number,
   fps: number,
   durationSec: number,
-  direction: "in" | "out"
+  direction: "in" | "out",
+  tailSilenceSec: number = 0
 ): Promise<void> {
   const totalFrames = Math.max(2, Math.ceil(durationSec * fps));
   const minZoom = 1.0;
@@ -161,11 +166,16 @@ function renderKenBurnsClip(
   const filter = `scale=${w * 2}:${h * 2}:flags=lanczos,zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${w}x${h}:fps=${fps}`;
 
   return new Promise((resolve, reject) => {
-    ffmpeg()
+    const cmd = ffmpeg()
       .input(imagePath)
       .inputOptions(["-loop 1"])
       .input(audioPath)
-      .videoFilters(filter)
+      .videoFilters(filter);
+    // Pad audio with silence at the end so consecutive scenes get a breath.
+    if (tailSilenceSec > 0) {
+      cmd.audioFilters(`apad=pad_dur=${tailSilenceSec.toFixed(3)}`);
+    }
+    cmd
       .outputOptions([
         `-r ${fps}`,
         `-t ${durationSec.toFixed(3)}`,
@@ -193,14 +203,19 @@ function renderAnimatedClip(
   w: number,
   h: number,
   fps: number,
-  durationSec: number
+  durationSec: number,
+  tailSilenceSec: number = 0
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg()
+    const cmd = ffmpeg()
       .input(videoPath)
       .inputOptions(["-stream_loop -1"])
       .input(audioPath)
-      .videoFilters(`scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`)
+      .videoFilters(`scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`);
+    if (tailSilenceSec > 0) {
+      cmd.audioFilters(`apad=pad_dur=${tailSilenceSec.toFixed(3)}`);
+    }
+    cmd
       .outputOptions([
         // Explicit stream mapping — drops Veo's audio even if `mute` didn't work
         "-map", "0:v:0",

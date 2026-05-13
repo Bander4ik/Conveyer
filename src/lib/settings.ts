@@ -62,6 +62,7 @@ export const SETTING_KEYS = [
   "VIDEO_FPS",               // 24 / 30 / 60
   "SCENE_DURATION_SECONDS",  // fallback duration when TTS length is unknown
   "TRANSITION_DURATION",     // crossfade between scenes in seconds (0 = none)
+  "SCENE_TAIL_SILENCE",      // silence appended to each clip's audio (seconds), creates breathing room between scenes
 
   // ── Performance / Concurrency ─────────────────────────────────────
   "IMAGE_CONCURRENCY",       // parallel image jobs
@@ -166,6 +167,7 @@ export const DEFAULTS: Record<SettingKey, string> = {
   VIDEO_FPS: "30",
   SCENE_DURATION_SECONDS: "5",
   TRANSITION_DURATION: "0.5",
+  SCENE_TAIL_SILENCE: "0.4",
 
   // Performance
   IMAGE_CONCURRENCY: "5",
