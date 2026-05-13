@@ -11,9 +11,10 @@ CRITICAL RULES:
 1. Cover the ENTIRE script verbatim, with NO omissions, no summarizing, no paraphrasing.
 2. The concatenation of every scene's "text" field (joined by spaces) MUST equal the original script word-for-word.
 3. Do NOT summarize. Do NOT add commentary. Do NOT reorder words.
-4. One scene = 1–2 sentences = ~5–10 seconds of narration = roughly 12–25 words.
-5. If a sentence is long, give it its own scene — don't merge multiple long sentences.
-6. Section headings (e.g. "Part one. The configuration.") should be their own short scenes.
+4. **NEVER split a sentence in the middle.** A sentence ends ONLY at a period (.), question mark (?), or exclamation mark (!). Commas, semicolons, dashes, and colons are NOT sentence boundaries — they MUST stay inside one scene.
+5. Each scene contains 1, 2, or sometimes 3 COMPLETE sentences. Prefer 2 sentences per scene when the sentences are short and naturally pair up. Use 1 sentence per scene only when a single sentence is long (25+ words) or when its meaning is too distinct to combine.
+6. Long sentences are FINE — a 30 or 40-word sentence stays in one scene. Do not split it to "fit a word budget".
+7. Section headings (e.g. "Part one. The configuration.") are their own short scenes.
 
 For EACH scene, return a JSON object with:
 - "text": the exact verbatim slice of the script (no edits, no punctuation changes).
