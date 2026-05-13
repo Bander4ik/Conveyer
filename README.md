@@ -8,6 +8,10 @@ like [The Sky Lab](https://www.youtube.com/@TheSkyLab-u4j) and
 > 👋 **Brand new and don't know what npm / Node / API keys are?**
 > Read [SETUP.md](./SETUP.md) — a non-technical step-by-step install guide that walks you
 > through everything from zero. Come back to this README once you have the platform running.
+>
+> 🔄 **Already running an older version?** See [UPDATING.md](./UPDATING.md) for step-by-step
+> update instructions (ZIP and git, Mac and Windows). Your API keys, prompts, and runs
+> are preserved automatically.
 
 Everything is controlled from a local web UI:
 
