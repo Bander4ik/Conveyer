@@ -105,8 +105,8 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    title: "Voice Fine-Tuning (ElevenLabs only)",
-    subtitle: "Subtle voice character controls. Only applied when TTS_VOICE_PROVIDER = elevenlabs. Defaults are tuned for slower, documentary-style narration.",
+    title: "Voice Fine-Tuning (ElevenLabs voices)",
+    subtitle: "Subtle voice character controls. Active when TTS_VOICE_PROVIDER = elevenlabs — works whether you reach ElevenLabs directly or through 69labs's gateway. Ignored for edgetts and voice-clone. Defaults are tuned for slower, documentary-style narration.",
     fields: [
       {
         key: "TTS_SPEED",
@@ -136,8 +136,8 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    title: "Sentence Pauses (ElevenLabs)",
-    subtitle: "Inserts automatic breath pauses at sentence boundaries so the narrator doesn't run sentences together.",
+    title: "Sentence Pauses (ElevenLabs voices)",
+    subtitle: "Inserts automatic breath pauses BETWEEN sentences within a single scene's TTS. Active for ElevenLabs voices — works through 69labs's gateway too. Note: pauses between SCENES are handled separately via SCENE_TAIL_SILENCE in Video Assembly below.",
     fields: [
       {
         key: "TTS_AUTO_PAUSE",
