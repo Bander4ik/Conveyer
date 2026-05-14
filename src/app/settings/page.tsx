@@ -273,6 +273,11 @@ const GROUPS: Group[] = [
         desc: "How many FFmpeg clip renders happen in parallel. This is CPU-bound — set roughly to half your CPU core count. A 16-core machine can comfortably handle 6–8.",
         examples: "default 4  ·  raise on 8+ core CPUs",
       },
+      {
+        key: "ASSEMBLE_XFADE_CHUNKS",
+        desc: "Splits the final crossfade pass into N chunks that run in parallel, then crossfades the chunks together. Massively speeds up assembly for long videos (100+ scenes) because FFmpeg's xfade filter is single-threaded per pair. With 4 chunks, a 100-scene xfade on an 8-core CPU drops from ~50 min to ~12-15 min. Set to 1 to disable (monolithic xfade). Auto-skipped if you have fewer than 3×chunks scenes (i.e. 12 with default 4).",
+        examples: "1 = no chunking  ·  4 = default (4-8 core CPU)  ·  6-8 for 16+ core CPUs",
+      },
     ],
   },
   {

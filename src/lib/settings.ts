@@ -69,6 +69,7 @@ export const SETTING_KEYS = [
   "TTS_CONCURRENCY",         // parallel TTS jobs
   "ANIMATION_CONCURRENCY",   // parallel img2vid jobs
   "ASSEMBLE_CONCURRENCY",    // parallel FFmpeg clip renders
+  "ASSEMBLE_XFADE_CHUNKS",   // split final xfade into N parallel chunks (1 = monolithic)
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -174,6 +175,7 @@ export const DEFAULTS: Record<SettingKey, string> = {
   TTS_CONCURRENCY: "3",
   ANIMATION_CONCURRENCY: "3",
   ASSEMBLE_CONCURRENCY: "4",
+  ASSEMBLE_XFADE_CHUNKS: "4",
 };
 
 /** Write defaults for any keys that aren't already in the DB. */
