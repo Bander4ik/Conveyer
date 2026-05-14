@@ -10,6 +10,7 @@ import { synthesizeScene } from "./services/tts";
 import { generateImage } from "./services/image-gen";
 import { animateScene, pickScenesToAnimate } from "./services/img2vid";
 import { assembleVideo, type AssembleInput } from "./services/video-assemble";
+import { getKeyCount } from "./services/labs69";
 import { checkCancelled, clearCancelled, CancelledError } from "./cancellation";
 
 const updateRun = db.prepare(
@@ -36,9 +37,17 @@ export async function runPipeline(runId: string, script: string) {
     // 2. Per scene: TTS + Image + (Animation as soon as image is ready) — all
     //    interleaved in a single loop. No "wait for all images then start animations"
     //    phase, which saves ~30–50% of total time.
-    const imageConcurrency = Math.max(1, Number(getSetting("IMAGE_CONCURRENCY") || "5"));
-    const ttsConcurrency = Math.max(1, Number(getSetting("TTS_CONCURRENCY") || "3"));
-    const animConcurrency = Math.max(1, Number(getSetting("ANIMATION_CONCURRENCY") || "3"));
+    //
+    // Concurrency limits below are PER KEY. With N 69labs keys configured, the
+    // effective parallel job count is (limit × N) — each key has its own 7-image
+    // / 5-video cap on the 69labs side.
+    const keyCount = Math.max(1, getKeyCount());
+    const imageConcurrencyPerKey = Math.max(1, Number(getSetting("IMAGE_CONCURRENCY") || "5"));
+    const ttsConcurrencyPerKey = Math.max(1, Number(getSetting("TTS_CONCURRENCY") || "3"));
+    const animConcurrencyPerKey = Math.max(1, Number(getSetting("ANIMATION_CONCURRENCY") || "3"));
+    const imageConcurrency = imageConcurrencyPerKey * keyCount;
+    const ttsConcurrency = ttsConcurrencyPerKey * keyCount;
+    const animConcurrency = animConcurrencyPerKey * keyCount;
     const limitImg = pLimit(imageConcurrency);
     const limitTts = pLimit(ttsConcurrency);
     const limitAnim = pLimit(animConcurrency);
@@ -58,7 +67,7 @@ export async function runPipeline(runId: string, script: string) {
     log(
       runId,
       "info",
-      `Generating ${scenes.length} scenes. Concurrency: TTS=${ttsConcurrency}, image=${imageConcurrency}, anim=${animConcurrency}. Animation: ${animProvider !== "off" ? `${animTargets.size}/${scenes.length} scenes (${animDistribution})` : "off"}`,
+      `Generating ${scenes.length} scenes. Keys: ${keyCount} · Concurrency (per key × keys): TTS=${ttsConcurrencyPerKey}×${keyCount}=${ttsConcurrency}, image=${imageConcurrencyPerKey}×${keyCount}=${imageConcurrency}, anim=${animConcurrencyPerKey}×${keyCount}=${animConcurrency}. Animation: ${animProvider !== "off" ? `${animTargets.size}/${scenes.length} scenes (${animDistribution})` : "off"}`,
       { stage: "pipeline" }
     );
 

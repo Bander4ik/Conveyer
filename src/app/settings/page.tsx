@@ -7,6 +7,7 @@ interface Field {
   desc: string;
   examples?: string;
   required?: boolean;
+  multiline?: boolean;
 }
 
 interface Group {
@@ -35,9 +36,10 @@ const GROUPS: Group[] = [
       },
       {
         key: "LABS69_API_KEY",
-        desc: "All-in-one key for voice, images, and video animation through 69labs.vip. Replaces three separate provider subscriptions.",
-        examples: "Sign up at https://69labs.vip → Account → API keys. Starts with vk_",
+        desc: "All-in-one key for voice, images, and video animation through 69labs.vip. Replaces three separate provider subscriptions.\n\nPRO TIP: You can paste multiple keys from different 69labs accounts (one per line, or comma-separated). Each account adds another 7 parallel image jobs + 5 parallel video jobs to the pool. With 3 keys, generation is roughly 3× faster. The platform automatically balances jobs across all keys and pairs image→video chains to the same key (so img2vid still works).",
+        examples: "Single key: vk_abc... · Multiple keys: paste each on its own line. Each starts with vk_",
         required: true,
+        multiline: true,
       },
     ],
   },
@@ -255,18 +257,18 @@ const GROUPS: Group[] = [
     fields: [
       {
         key: "IMAGE_CONCURRENCY",
-        desc: "Simultaneous image generation jobs. 69labs's hard limit is 7. We default to 5 to leave headroom for retries. Raise to 7 for maximum speed if you don't see 403 errors.",
-        examples: "default 5  ·  max 7 for 69labs",
+        desc: "Simultaneous image jobs PER KEY. 69labs's hard limit is 7 per account. We default to 5 to leave headroom for retries. With N keys configured, the total parallel capacity = this × N. Raise to 7 for maximum speed if you don't see 403 errors.",
+        examples: "default 5  ·  max 7 per 69labs account  ·  total = this × number of keys",
       },
       {
         key: "TTS_CONCURRENCY",
-        desc: "Simultaneous TTS jobs. ElevenLabs through 69labs has generous limits. Higher = faster narration generation for long scripts.",
-        examples: "default 3  ·  bump to 5–7 if you have an unlimited subscription",
+        desc: "Simultaneous TTS jobs PER KEY. ElevenLabs through 69labs has generous limits. With multiple keys, you also get multiple per-account character quotas. Total = this × number of keys.",
+        examples: "default 3  ·  bump to 5–7 if you have a paid subscription with high quota",
       },
       {
         key: "ANIMATION_CONCURRENCY",
-        desc: "Simultaneous img2vid jobs. 69labs's hard limit is 5. We default to 3 for retry headroom.",
-        examples: "default 3  ·  max 5 for 69labs",
+        desc: "Simultaneous img2vid jobs PER KEY. 69labs's hard limit is 5 per account. We default to 3 for retry headroom. Total = this × number of keys.",
+        examples: "default 3  ·  max 5 per 69labs account",
       },
       {
         key: "ASSEMBLE_CONCURRENCY",
@@ -313,14 +315,29 @@ const GROUPS: Group[] = [
   },
 ];
 
+interface StatsResp {
+  keyCount: number;
+  perKey: { image: number; tts: number; anim: number };
+  total: { image: number; tts: number; anim: number };
+  assembleConcurrency: number;
+  xfadeChunks: number;
+  animationEnabled: boolean;
+  animationRatio: number;
+}
+
 export default function SettingsPage() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [revealing, setRevealing] = useState(false);
+  const [stats, setStats] = useState<StatsResp | null>(null);
 
   async function load(reveal = false) {
-    const r = await fetch(`/api/settings${reveal ? "?reveal=1" : ""}`);
-    setValues(await r.json());
+    const [settingsR, statsR] = await Promise.all([
+      fetch(`/api/settings${reveal ? "?reveal=1" : ""}`).then((r) => r.json()),
+      fetch("/api/stats").then((r) => r.json()).catch(() => null),
+    ]);
+    setValues(settingsR);
+    setStats(statsR);
     setRevealing(reveal);
   }
 
@@ -357,6 +374,47 @@ export default function SettingsPage() {
         </button>
         <button className="btn" onClick={save}>{saved ? "Saved ✓" : "Save all changes"}</button>
       </div>
+
+      {stats && stats.keyCount > 0 && (
+        <div
+          className="card"
+          style={{
+            marginBottom: 14,
+            background: "linear-gradient(90deg, #14141d, #1a1a28)",
+            borderColor: stats.keyCount >= 2 ? "#3a5a3a" : undefined,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                ⚡ Current parallel capacity
+                {stats.keyCount >= 2 && (
+                  <span style={{ marginLeft: 8, color: "#6dd66d", fontSize: 12 }}>
+                    × {stats.keyCount} keys
+                  </span>
+                )}
+              </div>
+              <div style={{ color: "#9090a8", fontSize: 13, lineHeight: 1.6 }}>
+                <strong style={{ color: "#e8e8f0" }}>{stats.total.image}</strong> image jobs · <strong style={{ color: "#e8e8f0" }}>{stats.total.anim}</strong> video jobs · <strong style={{ color: "#e8e8f0" }}>{stats.total.tts}</strong> TTS jobs running at once
+              </div>
+              {stats.keyCount === 1 && (
+                <div style={{ color: "#ffce4d", fontSize: 12, marginTop: 6 }}>
+                  💡 Add a second / third 69labs key in the field below to multiply parallel capacity. With 3 keys, generation time drops roughly 3×.
+                </div>
+              )}
+              {stats.keyCount >= 2 && (
+                <div style={{ color: "#6dd66d", fontSize: 12, marginTop: 6 }}>
+                  ✓ Multi-key mode active — image/video generation runs ~{stats.keyCount}× faster than with one key. Heavier CPU load during the FFmpeg assembly stage on weak machines.
+                </div>
+              )}
+            </div>
+            <div style={{ color: "#5a5a70", fontSize: 11, textAlign: "right" }}>
+              FFmpeg: {stats.assembleConcurrency} parallel clips<br />
+              xfade chunks: {stats.xfadeChunks}
+            </div>
+          </div>
+        </div>
+      )}
 
       {GROUPS.map((g) => (
         <div
@@ -411,21 +469,47 @@ export default function SettingsPage() {
                     <span style={{ color: "#ff6d6d", fontSize: 10, fontWeight: 700 }}>required</span>
                   )}
                 </div>
-                <input
-                  className="input"
-                  value={values[f.key] ?? ""}
-                  placeholder={f.examples ? `e.g. ${f.examples}` : ""}
-                  onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
-                  style={{
-                    borderColor: f.required && !values[f.key] ? "#ff6d6d" : undefined,
-                  }}
-                />
+                {f.multiline ? (
+                  <textarea
+                    className="textarea"
+                    value={values[f.key] ?? ""}
+                    placeholder={f.examples ? `e.g. ${f.examples}` : ""}
+                    onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+                    rows={Math.max(2, Math.min(6, (values[f.key] ?? "").split(/\n/).length + 1))}
+                    style={{
+                      borderColor: f.required && !values[f.key] ? "#ff6d6d" : undefined,
+                      fontFamily: "ui-monospace, monospace",
+                      fontSize: 13,
+                    }}
+                  />
+                ) : (
+                  <input
+                    className="input"
+                    value={values[f.key] ?? ""}
+                    placeholder={f.examples ? `e.g. ${f.examples}` : ""}
+                    onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+                    style={{
+                      borderColor: f.required && !values[f.key] ? "#ff6d6d" : undefined,
+                    }}
+                  />
+                )}
+                {f.key === "LABS69_API_KEY" && values[f.key] && (
+                  <div style={{ color: "#7c5cff", fontSize: 12, marginTop: 6 }}>
+                    🔑 Detected{" "}
+                    <strong>
+                      {values[f.key].split(/[\n,;]+/).map((k) => k.trim()).filter(Boolean).length}
+                    </strong>
+                    {" "}key
+                    {values[f.key].split(/[\n,;]+/).map((k) => k.trim()).filter(Boolean).length === 1 ? "" : "s"}
+                  </div>
+                )}
                 <div
                   style={{
                     color: "#9090a8",
                     fontSize: 12,
                     marginTop: 6,
                     lineHeight: 1.5,
+                    whiteSpace: "pre-line",
                   }}
                 >
                   {f.desc}

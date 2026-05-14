@@ -96,13 +96,19 @@ export function getAllSettings(): Record<string, string> {
   return out;
 }
 
-/** Safe version — masks secret keys/tokens. */
+/** Safe version — masks secret keys/tokens. Handles multi-line key lists too. */
 export function getMaskedSettings(): Record<string, string> {
   const all = getAllSettings();
   const masked: Record<string, string> = {};
   for (const [k, v] of Object.entries(all)) {
     if (k.includes("KEY") || k.includes("TOKEN")) {
-      masked[k] = v ? `${v.slice(0, 4)}…${v.slice(-4)}` : "";
+      if (!v) {
+        masked[k] = "";
+      } else {
+        // Mask each line/entry separately so multi-key fields show all entries
+        const parts = v.split(/[\n,;]+/).map((p) => p.trim()).filter(Boolean);
+        masked[k] = parts.map((p) => `${p.slice(0, 4)}…${p.slice(-4)}`).join("\n");
+      }
     } else {
       masked[k] = v;
     }

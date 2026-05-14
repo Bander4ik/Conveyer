@@ -4,7 +4,7 @@ import { getSetting } from "../settings";
 import { getPrompt } from "../prompts";
 import { log } from "../logger";
 import type { Scene } from "./scene-split";
-import { createImageJob, pollJob, downloadJob, cancelJob } from "./labs69";
+import { createImageJob, pollJob, downloadJob, cancelJob, releaseJob } from "./labs69";
 
 export interface ImageResult {
   /** Path to the png file. */
@@ -93,12 +93,20 @@ async function labs69Image(runId: string, prompt: string, outPath: string): Prom
       lastErr = e;
       const msg = e instanceof Error ? e.message : String(e);
 
-      // On polling timeout — cancel the orphaned job to free its concurrency slot
-      if (lastJobId && /polling timeout/i.test(msg)) {
-        const cancelled = await cancelJob("images", lastJobId);
-        log(runId, "debug", `Cancelled ${lastJobId.slice(0, 8)} → ${cancelled ? "ok" : "skipped"}`, {
-          stage: "image",
-        });
+      // On polling timeout — cancel the orphaned job to free its concurrency slot.
+      // cancelJob() releases the key slot internally. For other error types
+      // (poll itself failed, download failed) we still need to release the key
+      // since the job is dead to us.
+      if (lastJobId) {
+        if (/polling timeout/i.test(msg)) {
+          const cancelled = await cancelJob("images", lastJobId);
+          log(runId, "debug", `Cancelled ${lastJobId.slice(0, 8)} → ${cancelled ? "ok" : "skipped"}`, {
+            stage: "image",
+          });
+        } else {
+          // Free the key slot even on non-timeout errors so retries don't pile up
+          releaseJob(lastJobId);
+        }
       }
 
       if (attempt < MAX_ATTEMPTS) {

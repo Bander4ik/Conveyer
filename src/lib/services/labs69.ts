@@ -3,10 +3,17 @@ import { getSetting } from "../settings";
 import { log, type LogLevel } from "../logger";
 
 /**
- * 69labs.vip API client.
+ * 69labs.vip API client with multi-key pool support.
  *
  * A single API key (vk_...) covers TTS + images + videos.
- * All endpoints use the async job pattern: create → poll → download.
+ * The platform supports MULTIPLE accounts/keys for higher parallelism — each
+ * 69labs account has its own hard limits (7 concurrent images, 5 concurrent
+ * videos), so 3 keys = 21 image / 15 video slots total.
+ *
+ * Keys are read from `LABS69_API_KEY` setting (newline or comma separated).
+ * Jobs are bound to a specific key for their lifetime (poll/download/cancel
+ * all use the same key that created the job) — required for img2vid chaining
+ * because 69labs only lets the original account access a job's output.
  *
  * Docs:    https://69labs.vip/api-docs
  * OpenAPI: https://69labs.vip/api/docs/openapi.yaml
@@ -21,19 +28,95 @@ const POLL_MAX_MS = 8 * 60 * 1000;
 type JobKind = "tts" | "images" | "videos";
 type JobStatus = "PENDING" | "PROCESSING" | "FINALIZING" | "COMPLETED" | "FAILED" | "CANCELLED" | "CENSORED";
 
-function authHeaders(): Record<string, string> {
-  const key = getSetting("LABS69_API_KEY");
-  if (!key) throw new Error("LABS69_API_KEY is not set (Settings)");
+// ── Key pool ────────────────────────────────────────────────────────────────
+
+/**
+ * Tracks in-flight job count per key.
+ * Key list is parsed lazily from the LABS69_API_KEY setting on each pick(),
+ * so users can add/remove keys live in /settings and we pick them up next job.
+ */
+const pool = {
+  active: new Map<string, number>(),
+
+  list(): string[] {
+    return getSetting("LABS69_API_KEY")
+      .split(/[\n,;]+/)
+      .map((k) => k.trim())
+      .filter(Boolean);
+  },
+
+  /** Pick the least-loaded key from the current pool. Bumps its counter. */
+  pick(): string {
+    const keys = this.list();
+    if (keys.length === 0) throw new Error("LABS69_API_KEY is not set (Settings)");
+    let best = keys[0];
+    let bestCount = this.active.get(best) ?? 0;
+    for (let i = 1; i < keys.length; i++) {
+      const c = this.active.get(keys[i]) ?? 0;
+      if (c < bestCount) {
+        best = keys[i];
+        bestCount = c;
+      }
+    }
+    this.active.set(best, bestCount + 1);
+    return best;
+  },
+
+  /** Manually acquire a specific key (used when chaining img2vid to a known image's key). */
+  acquireSpecific(key: string) {
+    if (!key) return;
+    this.active.set(key, (this.active.get(key) ?? 0) + 1);
+  },
+
+  release(key: string) {
+    const c = this.active.get(key) ?? 0;
+    if (c > 0) this.active.set(key, c - 1);
+  },
+};
+
+/** Number of configured keys. Exposed for UI / pipeline concurrency scaling. */
+export function getKeyCount(): number {
+  return pool.list().length;
+}
+
+// ── Job ↔ key binding ───────────────────────────────────────────────────────
+
+/**
+ * jobId → key that created it. Needed because:
+ *   • polling a job has to use the same account that created it
+ *   • img2vid with imageJobId requires the same key as the source image
+ */
+const jobKeyMap = new Map<string, string>();
+
+/** Release a job's slot manually (used in caller error/cleanup paths). */
+export function releaseJob(jobId: string) {
+  const key = jobKeyMap.get(jobId);
+  if (key) {
+    pool.release(key);
+    jobKeyMap.delete(jobId);
+  }
+}
+
+function authHeadersFor(key: string): Record<string, string> {
   return {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
   };
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+function keyFor(jobId: string): string {
+  const k = jobKeyMap.get(jobId);
+  if (k) return k;
+  // Fallback to first key — happens for older jobs without binding (e.g. after server restart).
+  const keys = pool.list();
+  if (keys.length === 0) throw new Error("LABS69_API_KEY is not set");
+  return keys[0];
+}
+
+async function postJsonWithKey<T>(path: string, body: unknown, key: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeadersFor(key),
     body: JSON.stringify(body),
   });
   if (!r.ok) {
@@ -51,6 +134,8 @@ interface MultiJobCreatedResponse {
   jobs: JobCreatedResponse[];
 }
 
+// ── TTS ─────────────────────────────────────────────────────────────────────
+
 /** TTS: create a job. Returns jobId. Supports elevenlabs / edgetts / voice-clone. */
 export async function createTtsJob(opts: {
   text: string;
@@ -58,44 +143,54 @@ export async function createTtsJob(opts: {
   voiceProvider?: "elevenlabs" | "edgetts" | "voice-clone";
   modelId?: string;
   splitType?: "smart" | "paragraphs" | "max_length";
-  // ElevenLabs voice tuning (only applies when voiceProvider=elevenlabs)
   voiceSettings?: {
-    stability?: number;       // 0–1, default 0.5
-    similarityBoost?: number; // 0–1, default 0.75
-    speed?: number;           // 0.7–1.2, default 1.0 (lower = slower)
-    style?: number;           // 0–1, default 0
+    stability?: number;
+    similarityBoost?: number;
+    speed?: number;
+    style?: number;
     useSpeakerBoost?: boolean;
   };
-  autoPauseEnabled?: boolean;     // insert automatic pauses
-  autoPauseDuration?: number;     // 0.1–30 seconds
-  autoPauseFrequency?: number;    // 1–100 (how often)
+  autoPauseEnabled?: boolean;
+  autoPauseDuration?: number;
+  autoPauseFrequency?: number;
 }): Promise<string> {
-  // Voice-clone uses a different endpoint
-  if (opts.voiceProvider === "voice-clone") {
-    const resp = await postJson<JobCreatedResponse>("/voice-clones/generate", {
-      voiceCloneId: opts.voiceId,
+  const key = pool.pick();
+  try {
+    // Voice-clone uses a different endpoint
+    if (opts.voiceProvider === "voice-clone") {
+      const resp = await postJsonWithKey<JobCreatedResponse>(
+        "/voice-clones/generate",
+        { voiceCloneId: opts.voiceId, text: opts.text },
+        key
+      );
+      jobKeyMap.set(resp.id, key);
+      return resp.id;
+    }
+    const body: Record<string, unknown> = {
       text: opts.text,
-    });
+      voiceId: opts.voiceId,
+      splitType: opts.splitType ?? "smart",
+    };
+    if (opts.voiceProvider) body.voiceProvider = opts.voiceProvider;
+    if (opts.modelId) body.modelId = opts.modelId;
+    if (opts.voiceSettings && Object.keys(opts.voiceSettings).length > 0) {
+      body.voiceSettings = opts.voiceSettings;
+    }
+    if (opts.autoPauseEnabled) {
+      body.autoPauseEnabled = true;
+      if (opts.autoPauseDuration !== undefined) body.autoPauseDuration = opts.autoPauseDuration;
+      if (opts.autoPauseFrequency !== undefined) body.autoPauseFrequency = opts.autoPauseFrequency;
+    }
+    const resp = await postJsonWithKey<JobCreatedResponse>("/tts/generate", body, key);
+    jobKeyMap.set(resp.id, key);
     return resp.id;
+  } catch (e) {
+    pool.release(key);
+    throw e;
   }
-  const body: Record<string, unknown> = {
-    text: opts.text,
-    voiceId: opts.voiceId,
-    splitType: opts.splitType ?? "smart",
-  };
-  if (opts.voiceProvider) body.voiceProvider = opts.voiceProvider;
-  if (opts.modelId) body.modelId = opts.modelId;
-  if (opts.voiceSettings && Object.keys(opts.voiceSettings).length > 0) {
-    body.voiceSettings = opts.voiceSettings;
-  }
-  if (opts.autoPauseEnabled) {
-    body.autoPauseEnabled = true;
-    if (opts.autoPauseDuration !== undefined) body.autoPauseDuration = opts.autoPauseDuration;
-    if (opts.autoPauseFrequency !== undefined) body.autoPauseFrequency = opts.autoPauseFrequency;
-  }
-  const resp = await postJson<JobCreatedResponse>("/tts/generate", body);
-  return resp.id;
 }
+
+// ── Images ──────────────────────────────────────────────────────────────────
 
 /** Image: create a job. Returns jobId. */
 export async function createImageJob(opts: {
@@ -105,22 +200,39 @@ export async function createImageJob(opts: {
   resolution?: string;
   imageUrls?: string[];
 }): Promise<string> {
-  const body: Record<string, unknown> = { prompt: opts.prompt };
-  if (opts.model) body.model = opts.model;
-  if (opts.aspectRatio) body.aspectRatio = opts.aspectRatio;
-  if (opts.resolution) body.resolution = opts.resolution;
-  if (opts.imageUrls?.length) body.imageUrls = opts.imageUrls;
+  const key = pool.pick();
+  try {
+    const body: Record<string, unknown> = { prompt: opts.prompt };
+    if (opts.model) body.model = opts.model;
+    if (opts.aspectRatio) body.aspectRatio = opts.aspectRatio;
+    if (opts.resolution) body.resolution = opts.resolution;
+    if (opts.imageUrls?.length) body.imageUrls = opts.imageUrls;
 
-  const resp = await postJson<JobCreatedResponse | MultiJobCreatedResponse>("/images/generate", body);
-  if ("jobs" in resp) return resp.jobs[0].id;
-  return resp.id;
+    const resp = await postJsonWithKey<JobCreatedResponse | MultiJobCreatedResponse>(
+      "/images/generate",
+      body,
+      key
+    );
+    const id = "jobs" in resp ? resp.jobs[0].id : resp.id;
+    jobKeyMap.set(id, key);
+    return id;
+  } catch (e) {
+    pool.release(key);
+    throw e;
+  }
 }
+
+// ── Videos ──────────────────────────────────────────────────────────────────
 
 /**
  * Video: create a job. Supports:
  *  - text-to-video (prompt only)
  *  - image-to-video via imageJobId (reuses a previous /images/generate job)
  *  - image-to-video via imageUrls (external URLs)
+ *
+ * Critical: when imageJobId is provided, the video job MUST be created using
+ * the same API key that created the image job. Otherwise 69labs returns 403
+ * (the image belongs to a different account).
  */
 export async function createVideoJob(opts: {
   prompt: string;
@@ -131,22 +243,41 @@ export async function createVideoJob(opts: {
   imageUrls?: string[];
   mute?: boolean;
 }): Promise<string> {
-  const body: Record<string, unknown> = { prompt: opts.prompt };
-  if (opts.model) body.model = opts.model;
-  if (opts.aspectRatio) body.aspectRatio = opts.aspectRatio;
-  if (opts.duration) body.duration = opts.duration;
-  // Mute defaults to true — we don't want Veo's ambient sounds because the TTS
-  // narration is going on top.
-  body.mute = opts.mute ?? true;
-  if (opts.imageJobId) body.imageJobId = opts.imageJobId;
-  else if (opts.imageUrls && opts.imageUrls.length) body.imageUrls = opts.imageUrls;
+  // Pick a key — but if we're chaining off an existing image job, reuse its key
+  let key: string;
+  if (opts.imageJobId && jobKeyMap.has(opts.imageJobId)) {
+    key = jobKeyMap.get(opts.imageJobId)!;
+    pool.acquireSpecific(key);
+  } else {
+    key = pool.pick();
+  }
 
-  const resp = await postJson<JobCreatedResponse | MultiJobCreatedResponse>("/videos/generate", body);
-  if ("jobs" in resp) return resp.jobs[0].id;
-  return resp.id;
+  try {
+    const body: Record<string, unknown> = { prompt: opts.prompt };
+    if (opts.model) body.model = opts.model;
+    if (opts.aspectRatio) body.aspectRatio = opts.aspectRatio;
+    if (opts.duration) body.duration = opts.duration;
+    body.mute = opts.mute ?? true;
+    if (opts.imageJobId) body.imageJobId = opts.imageJobId;
+    else if (opts.imageUrls && opts.imageUrls.length) body.imageUrls = opts.imageUrls;
+
+    const resp = await postJsonWithKey<JobCreatedResponse | MultiJobCreatedResponse>(
+      "/videos/generate",
+      body,
+      key
+    );
+    const id = "jobs" in resp ? resp.jobs[0].id : resp.id;
+    jobKeyMap.set(id, key);
+    return id;
+  } catch (e) {
+    pool.release(key);
+    throw e;
+  }
 }
 
-/** Polls a job until COMPLETED or FAILED. */
+// ── Polling / download / cancel ─────────────────────────────────────────────
+
+/** Polls a job until COMPLETED or FAILED. Uses the key that created the job. */
 export async function pollJob(
   kind: JobKind,
   jobId: string,
@@ -154,9 +285,10 @@ export async function pollJob(
   stage: string,
   level: LogLevel = "debug"
 ): Promise<void> {
+  const key = keyFor(jobId);
   const start = Date.now();
   while (true) {
-    const r = await fetch(`${BASE}/${kind}/status/${jobId}`, { headers: authHeaders() });
+    const r = await fetch(`${BASE}/${kind}/status/${jobId}`, { headers: authHeadersFor(key) });
     if (!r.ok) {
       throw new Error(`69labs status ${kind}/${jobId} ${r.status}: ${(await r.text()).slice(0, 200)}`);
     }
@@ -177,30 +309,38 @@ export async function pollJob(
   }
 }
 
-/** Best-effort job cancellation. Used after polling timeout to free up the concurrent slot. */
+/** Best-effort job cancellation. Releases the key slot. */
 export async function cancelJob(kind: JobKind, jobId: string): Promise<boolean> {
+  const key = keyFor(jobId);
   try {
     const r = await fetch(`${BASE}/${kind}/cancel/${jobId}`, {
       method: "POST",
-      headers: { Authorization: authHeaders().Authorization },
+      headers: { Authorization: `Bearer ${key}` },
     });
     return r.ok;
   } catch {
     return false;
+  } finally {
+    releaseJob(jobId);
   }
 }
 
-/** Downloads a completed job's output to the given path. */
+/** Downloads a completed job's output. Releases the key slot. */
 export async function downloadJob(kind: JobKind, jobId: string, outPath: string): Promise<void> {
-  const r = await fetch(`${BASE}/${kind}/download/${jobId}`, {
-    headers: { Authorization: authHeaders().Authorization },
-    redirect: "follow",
-  });
-  if (!r.ok) {
-    throw new Error(`69labs download ${kind}/${jobId} ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const key = keyFor(jobId);
+  try {
+    const r = await fetch(`${BASE}/${kind}/download/${jobId}`, {
+      headers: { Authorization: `Bearer ${key}` },
+      redirect: "follow",
+    });
+    if (!r.ok) {
+      throw new Error(`69labs download ${kind}/${jobId} ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    fs.writeFileSync(outPath, buf);
+  } finally {
+    releaseJob(jobId);
   }
-  const buf = Buffer.from(await r.arrayBuffer());
-  fs.writeFileSync(outPath, buf);
 }
 
 function sleep(ms: number) {

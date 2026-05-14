@@ -4,7 +4,7 @@ import { getSetting } from "../settings";
 import { getPrompt } from "../prompts";
 import { log } from "../logger";
 import type { Scene } from "./scene-split";
-import { createVideoJob, pollJob, downloadJob, cancelJob } from "./labs69";
+import { createVideoJob, pollJob, downloadJob, cancelJob, releaseJob } from "./labs69";
 
 /**
  * Turns a still image into a short ~5-second video clip.
@@ -99,11 +99,15 @@ async function labs69Img2Vid(
     } catch (e) {
       lastErr = e;
       const msg = e instanceof Error ? e.message : String(e);
-      if (lastJobId && /polling timeout/i.test(msg)) {
-        const cancelled = await cancelJob("videos", lastJobId);
-        log(runId, "debug", `Cancelled video ${lastJobId.slice(0, 8)} → ${cancelled ? "ok" : "skipped"}`, {
-          stage: "animate",
-        });
+      if (lastJobId) {
+        if (/polling timeout/i.test(msg)) {
+          const cancelled = await cancelJob("videos", lastJobId);
+          log(runId, "debug", `Cancelled video ${lastJobId.slice(0, 8)} → ${cancelled ? "ok" : "skipped"}`, {
+            stage: "animate",
+          });
+        } else {
+          releaseJob(lastJobId);
+        }
       }
       if (attempt < MAX_ATTEMPTS) {
         const delay = 5000 * attempt;
