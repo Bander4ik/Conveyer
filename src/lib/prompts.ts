@@ -5,31 +5,39 @@ export type PromptName = (typeof PROMPT_NAMES)[number];
 
 export const DEFAULT_PROMPTS: Record<PromptName, string> = {
   scene_split: `You are the editor of a faceless YouTube channel.
-Split the provided script into scenes for an automated video pipeline.
+Split the provided script into SHORT scenes for an automated video pipeline.
+
+WHY SHORT MATTERS (read this before splitting):
+  The video generator (Veo) produces 8-second clips — that's the hard ceiling.
+  When a scene's narration runs longer than 8 s, the visual freezes on the
+  last frame for the remainder, which looks bad. Keep every scene's spoken
+  audio under ~8 s so the Veo clip covers it end-to-end with real motion.
 
 CRITICAL RULES:
 1. Cover the ENTIRE script verbatim, with NO omissions, no summarizing, no paraphrasing.
 2. The concatenation of every scene's "text" field (joined by spaces) MUST equal the original script word-for-word.
 3. Do NOT summarize. Do NOT add commentary. Do NOT reorder words.
 4. **NEVER split a sentence in the middle.** A sentence ends ONLY at a period (.), question mark (?), or exclamation mark (!). Commas, semicolons, dashes, and colons are NOT sentence boundaries — they MUST stay inside one scene.
-5. Each scene contains 1, 2, or sometimes 3 COMPLETE sentences. Prefer 2 sentences per scene when the sentences are short and naturally pair up. Use 1 sentence per scene only when a single sentence is long (25+ words) or when its meaning is too distinct to combine.
-6. Long sentences are FINE — a 30 or 40-word sentence stays in one scene. Do not split it to "fit a word budget".
-7. Section headings (e.g. "Part one. The configuration.") are their own short scenes.
+5. **TARGET SCENE LENGTH: 8–18 words, ~50–110 characters, ~3.5–7.5 seconds of narration.**
+6. **HARD MAX: 22 words / 140 characters / ~9 seconds per scene.** Going past 9 s of audio means the Veo clip can't cover the scene with motion. If a single sentence is naturally longer than 22 words, give it its own scene (rule 4 takes priority — never split mid-sentence).
+7. **Prefer 1 sentence per scene.** Use 2 sentences only when both are short (under 12 words combined).
+8. Section headings ("Part one. The configuration.") get their own short scene.
+9. Long single sentences are OK as standalone scenes, but flag them — they will look near-frozen at the end.
 
 For EACH scene, return a JSON object with:
 - "text": the exact verbatim slice of the script (no edits, no punctuation changes).
-- "visual_prompt": a 40–80-word English prompt for the image generator that LITERALLY illustrates the content of this scene's text, viewed through a cosmic / astronomical lens.
+- "visual_prompt": a 40–80-word English prompt for the video generator that LITERALLY illustrates the content of this scene's text, viewed through a cosmic / astronomical lens.
   IMPORTANT:
   • The channel is space-focused — astronomy, astrophysics, planetary science. Every scene must be in the cosmic genre: stars, planets, nebulae, supernovae, black holes, auroras, the sun, planetary surfaces, comet showers, galactic shots, NASA-style astrophotography.
   • NO PEOPLE in frame. No astronauts, no scientists, no faces, no hands, no silhouettes. If the script mentions humans, replace them with an abstract space metaphor (e.g. "humanity looking at the stars" → "Earth viewed from lunar orbit, blue marble against deep space").
   • No architecture, machines, ships, cities, labs, equipment — only pure cosmic visuals.
   • Photorealistic style (style is appended later — just write the SUBSTANCE of the shot).
-  • Good visual_prompt examples: "swirling spiral galaxy in deep space, dust lanes glowing pink and gold", "surface of Mars at dawn, rust-colored dunes stretching to horizon", "supernova remnant nebula expanding outward, plasma filaments in cyan and crimson".
-- "duration_hint_sec": approximate length in seconds (number, 5–10).
+  • Describe MOTION too — Veo generates 8-second clips, so include subtle camera motion (slow zoom, drift, parallax). Example: "slow pan across surface of Mars at dawn, rust-colored dunes stretching to horizon".
+- "duration_hint_sec": approximate audio length (number, 3–9).
 
 Return a STRICTLY valid JSON array — no markdown, no explanations.
 
-For a ~1500-word script expect ~100–150 scenes. If you produce fewer than 80, you've definitely skipped content — recount and try again.`,
+For a ~1500-word script expect ~80–130 scenes. For a ~700-word script expect ~40–60 scenes. If any "text" field is longer than 140 characters, you missed the limit — recount and re-split.`,
 
   image_prompt: `documentary photography, photoreal, real-world astronomy footage style, slightly hyper-real but grounded, NASA / ESA mission imagery, telescope-grade detail, natural color grading, dramatic cinematic lighting, 16:9 aspect, sharp focus, no text overlays, no watermarks, no logos, no humans, no people, no human figures, no faces, no astronauts in frame, no sci-fi stylization, no fantasy elements, no painterly artwork`,
 

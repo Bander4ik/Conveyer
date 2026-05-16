@@ -236,10 +236,19 @@ async function renderAnimatedClip(
 
   let videoFilter = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
   if (durationSec > videoDur + 0.05) {
-    const MAX_STRETCH = 1.5;
+    // Drop MAX_STRETCH from 1.5 to 1.15. Past ~1.15 the effective motion FPS
+    // drops below ~21 (24 / 1.15) and the image looks juddery — that's the
+    // "low FPS / picture jumps" symptom users have complained about.
+    // We'd rather freeze the last frame than stretch into ugly slow-mo.
+    const MAX_STRETCH = 1.15;
     const stretchFactor = Math.min(durationSec / videoDur, MAX_STRETCH);
     if (stretchFactor > 1.01) {
-      videoFilter = `setpts=${stretchFactor.toFixed(3)}*PTS,${videoFilter}`;
+      // CRITICAL: setpts alone makes ffmpeg space the SAME frames over a
+      // longer timeline → effective motion FPS = source_fps / stretchFactor.
+      // Pair it with `fps=N` so ffmpeg duplicates frames at the target rate
+      // and the playback timing stays uniform. (Real motion interpolation
+      // would need `minterpolate`, but that's too slow for batch.)
+      videoFilter = `setpts=${stretchFactor.toFixed(3)}*PTS,fps=${fps},${videoFilter}`;
     }
     const stretchedDur = videoDur * stretchFactor;
     const freezeNeeded = Math.max(0, durationSec - stretchedDur);
