@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     // BACK to us — overwriting the real key in the DB with a broken value.
     // The corrupted key then breaks every API call ("Cannot convert argument
     // to a ByteString because the character at index N has a value of 8230").
-    const isSecretField = k.includes("KEY") || k.includes("TOKEN");
+    const isSecretField = k.includes("KEY") || k.includes("TOKEN") || k.includes("SECRET");
     if (isSecretField && next.includes("…")) {
       continue; // keep existing DB value untouched
     }

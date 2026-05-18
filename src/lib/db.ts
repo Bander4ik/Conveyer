@@ -58,12 +58,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_run_logs_run ON run_logs(run_id, id);
 `);
 
-// Migration: add folder_name to existing DBs that pre-date it.
-// SQLite has no `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so we attempt and ignore failure.
-try {
-  db.exec("ALTER TABLE runs ADD COLUMN folder_name TEXT");
-} catch {
-  // column already exists
+// Migrations for older DBs. SQLite has no `ALTER TABLE ... ADD COLUMN IF NOT
+// EXISTS`, so we attempt and ignore failure when the column already exists.
+function tryAddColumn(table: string, columnDecl: string): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${columnDecl}`);
+  } catch {
+    // column already exists
+  }
 }
+
+tryAddColumn("runs", "folder_name TEXT");
+// Google Drive references — set by run-upload.ts after a successful sync.
+tryAddColumn("runs", "drive_clips_folder_id TEXT");
+tryAddColumn("runs", "drive_final_video_id TEXT");
+tryAddColumn("runs", "drive_synced_at TEXT");
+// Reuse map — JSON `{ "<scene_index>": "<drive_file_id>" }`. When present,
+// the pipeline skips video generation for those scenes and downloads from Drive.
+tryAddColumn("runs", "reuse_map_json TEXT");
 
 export default db;

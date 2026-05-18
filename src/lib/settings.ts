@@ -70,6 +70,23 @@ export const SETTING_KEYS = [
   "ANIMATION_CONCURRENCY",   // parallel img2vid jobs
   "ASSEMBLE_CONCURRENCY",    // parallel FFmpeg clip renders
   "ASSEMBLE_XFADE_CHUNKS",   // split final xfade into N parallel chunks (1 = monolithic)
+
+  // ── Google Drive sync ─────────────────────────────────────────────
+  // OAuth2 credentials from Google Cloud Console (Web Application client).
+  // Redirect URI must be set to http://localhost:3000/api/gdrive/oauth/callback
+  "GDRIVE_CLIENT_ID",
+  "GDRIVE_CLIENT_SECRET",
+  // Refresh token, set automatically after the user completes the OAuth flow.
+  // Don't edit by hand.
+  "GDRIVE_REFRESH_TOKEN",
+  // Email of the Google account that authorized — set automatically, shown in UI.
+  "GDRIVE_CONNECTED_EMAIL",
+  // Folder IDs in Drive. Empty = auto-create `Conveyer/Final Videos` and
+  // `Conveyer/Clips Library` in the user's Drive root on first sync.
+  "GDRIVE_FINAL_VIDEOS_FOLDER_ID",
+  "GDRIVE_CLIPS_LIBRARY_FOLDER_ID",
+  // Master switch. Empty/"0" = disabled (don't upload). "1" = upload after every run.
+  "GDRIVE_SYNC_ENABLED",
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -96,12 +113,17 @@ export function getAllSettings(): Record<string, string> {
   return out;
 }
 
-/** Safe version — masks secret keys/tokens. Handles multi-line key lists too. */
+/** Keys whose values are secrets and should be masked when sent to the UI. */
+function isSecretKey(key: string): boolean {
+  return key.includes("KEY") || key.includes("TOKEN") || key.includes("SECRET");
+}
+
+/** Safe version — masks secret keys/tokens/secrets. Handles multi-line key lists too. */
 export function getMaskedSettings(): Record<string, string> {
   const all = getAllSettings();
   const masked: Record<string, string> = {};
   for (const [k, v] of Object.entries(all)) {
-    if (k.includes("KEY") || k.includes("TOKEN")) {
+    if (isSecretKey(k)) {
       if (!v) {
         masked[k] = "";
       } else {
@@ -182,6 +204,16 @@ export const DEFAULTS: Record<SettingKey, string> = {
   ANIMATION_CONCURRENCY: "3",
   ASSEMBLE_CONCURRENCY: "4",
   ASSEMBLE_XFADE_CHUNKS: "4",
+
+  // Google Drive — all empty by default. User fills client_id/secret;
+  // OAuth flow fills refresh_token + email; folders auto-create on first sync.
+  GDRIVE_CLIENT_ID: "",
+  GDRIVE_CLIENT_SECRET: "",
+  GDRIVE_REFRESH_TOKEN: "",
+  GDRIVE_CONNECTED_EMAIL: "",
+  GDRIVE_FINAL_VIDEOS_FOLDER_ID: "",
+  GDRIVE_CLIPS_LIBRARY_FOLDER_ID: "",
+  GDRIVE_SYNC_ENABLED: "",
 };
 
 /** Write defaults for any keys that aren't already in the DB. */

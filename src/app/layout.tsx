@@ -18,8 +18,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </div>
             <Link href="/" style={navLink}>New run</Link>
             <Link href="/runs" style={navLink}>Run history</Link>
+            <Link href="/library" style={navLink}>Drive library</Link>
             <Link href="/prompts" style={navLink}>Prompts</Link>
             <Link href="/settings" style={navLink}>Keys &amp; Settings</Link>
+            <Link href="/settings/advanced" style={navLink}>Advanced settings</Link>
             <div style={{ marginTop: 24, fontSize: 12, color: "#8a8aa0" }}>
               v0.1 · local
             </div>

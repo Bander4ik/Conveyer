@@ -11,11 +11,14 @@ import { generateImage } from "./services/image-gen";
 import { animateScene, pickScenesToAnimate } from "./services/img2vid";
 import { assembleVideo, type AssembleInput } from "./services/video-assemble";
 import { getKeyCount } from "./services/labs69";
+import { syncRunToDrive } from "./services/run-upload";
+import { downloadReusedClip } from "./services/reuse";
 import { checkCancelled, clearCancelled, CancelledError } from "./cancellation";
 
 const updateRun = db.prepare(
   "UPDATE runs SET status = ?, output_path = ?, updated_at = datetime('now') WHERE id = ?"
 );
+const getReuseMapStmt = db.prepare("SELECT reuse_map_json FROM runs WHERE id = ?");
 
 export async function runPipeline(runId: string, script: string) {
   const runDir = getRunDir(runId);
@@ -33,6 +36,24 @@ export async function runPipeline(runId: string, script: string) {
     const scenes = await splitScript(runId, script);
     checkCancelled(runId);
     fs.writeFileSync(path.join(runDir, "scenes.json"), JSON.stringify(scenes, null, 2), "utf-8");
+
+    // Reuse map (set when user picked clips from the library on the New Run page).
+    // Keys are scene_index as string, values are Drive file IDs. When present
+    // for a scene's index, we download the existing clip from Drive instead
+    // of running animateScene for that scene — saves credits + time.
+    const reuseRow = getReuseMapStmt.get(runId) as { reuse_map_json: string | null } | undefined;
+    const reuseMap: Record<string, string> = reuseRow?.reuse_map_json
+      ? (JSON.parse(reuseRow.reuse_map_json) as Record<string, string>)
+      : {};
+    const reuseCount = Object.keys(reuseMap).length;
+    if (reuseCount > 0) {
+      log(
+        runId,
+        "info",
+        `Reusing ${reuseCount} clip${reuseCount === 1 ? "" : "s"} from Drive library`,
+        { stage: "reuse", data: { reuseMap } }
+      );
+    }
 
     // 2. Per scene: TTS + Image + (Animation as soon as image is ready) — all
     //    interleaved in a single loop. No "wait for all images then start animations"
@@ -89,8 +110,23 @@ export async function runPipeline(runId: string, script: string) {
 
           // 2b. If this scene is in the animation target set, start the img2vid
           //     job RIGHT NOW — no need to wait for other scenes' images.
+          //     If the user pre-selected a Drive clip to reuse for this scene,
+          //     download it instead of running animateScene (skips Veo entirely).
           let videoPath: string | null = null;
-          if (animTargets.has(scene.index)) {
+          const reuseFileId = reuseMap[String(scene.index)];
+          if (reuseFileId) {
+            try {
+              videoPath = await downloadReusedClip(runId, scene, reuseFileId, animDir);
+            } catch (e) {
+              log(
+                runId,
+                "warn",
+                `reuse #${scene.index} failed, falling back to live img2vid: ${(e as Error).message}`,
+                { stage: "reuse" }
+              );
+            }
+          }
+          if (!videoPath && animTargets.has(scene.index)) {
             try {
               videoPath = await limitAnim(() =>
                 animateScene(runId, scene, image.filePath, animDir, {
@@ -145,6 +181,16 @@ export async function runPipeline(runId: string, script: string) {
 
     // 3. Assemble final video
     const finalPath = await assembleVideo(runId, sceneAssets, runDir);
+
+    // 4. Drive sync (optional). Runs only when GDRIVE_SYNC_ENABLED=1 + Drive
+    //    is connected. Failure here is non-fatal: local files stay intact
+    //    and the user can retry from the run page (`/api/runs/<id>/drive`).
+    try {
+      await syncRunToDrive(runId, sceneAssets, runDir, finalPath);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log(runId, "warn", `Drive sync failed (local files preserved): ${msg}`, { stage: "gdrive" });
+    }
 
     updateRun.run("done", finalPath, runId);
     log(runId, "success", "Pipeline complete", { stage: "pipeline", data: { finalPath } });
