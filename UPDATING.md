@@ -17,6 +17,56 @@ if there's a hidden `.git` folder inside, you used **git**. Otherwise it's a **Z
 
 ---
 
+## What's new in this update — Google Drive sync 🚀
+
+The platform can now auto-upload every finished run to your Google Drive, so
+your videos and raw scene clips are backed up off your machine and available
+for reuse in future videos. Three things changed in the UI:
+
+1. **New sidebar link: "Drive library"** — browse every run you've uploaded to
+   Drive, with links to each clip. Empty until you finish a run with Drive
+   sync enabled.
+
+2. **Settings page split into two**:
+   - `/settings` is now just **Required API Keys + Google Drive sync**
+     (the new feature you'll spend time configuring).
+   - `/settings/advanced` is everything else (TTS, animation, performance,
+     etc.) — also linked in the sidebar. Nothing was removed, just moved.
+
+3. **A new "Google Drive Sync" section on /settings** with a built-in
+   10-step setup guide. The guide walks you through Google Cloud Console
+   (enable Drive API, create OAuth client, paste credentials, connect).
+   Read this section **after** updating.
+
+### What gets uploaded after each run
+
+```
+Your Google Drive:
+   Conveyer/
+     Final Videos/
+       <run-folder-name>.mp4         ← share-ready final video
+     Clips Library/
+       <run-folder-name>/
+         scene_001.mp4               ← raw Veo clip (no voiceover)
+         scene_002.mp4
+         ...
+         clips.json                  ← machine-readable manifest
+         description.md              ← human-readable summary
+```
+
+Drive sync is **off by default** — runs that finish before you turn it on
+behave exactly as today. To enable it: update the project (sections below),
+then follow the in-app setup guide on `/settings`.
+
+### Coming next (heads-up only — not in this release yet)
+
+The AI clip-search will scan your library before generating new clips and
+reuse anything visually relevant — so over time your 69labs spend drops.
+The infrastructure (manifests, library API, search backend) is already in
+place; the UI for picking clips is what's left.
+
+---
+
 ## What gets updated vs preserved
 
 ```
@@ -231,6 +281,65 @@ Double-click `start.bat`. Browser opens at http://localhost:3000.
 
 If `package.json` changed in the update, the launcher will auto-run
 `npm install` for you on first boot.
+
+---
+
+## Setting up Google Drive sync (after you've updated)
+
+Skip if you're not interested in Drive sync — everything else works the same.
+
+### One-time Google Cloud Console setup (~5 minutes)
+
+You need an OAuth Client ID and Secret from Google to let the platform write
+to your Drive on your behalf. The full step-by-step is **built into the
+Settings page** — click **"First-time setup — how to get Client ID / Secret"**
+on `/settings` and follow the 10 numbered steps. Short summary:
+
+1. Open https://console.cloud.google.com/ using the Gmail account that owns
+   the Drive you want files saved to.
+2. Create a new project (any name — "Conveyer" works).
+3. **APIs & Services → Library → Google Drive API → Enable**.
+4. **APIs & Services → OAuth consent screen → External**. Fill the required
+   fields. On the "Test users" step, add your own Gmail.
+5. **APIs & Services → Credentials → Create OAuth client → Web Application**.
+6. Add authorized redirect URI:
+   `http://localhost:3000/api/gdrive/oauth/callback`
+7. Copy the **Client ID** and **Client Secret** Google shows you.
+8. Paste them into `GDRIVE_CLIENT_ID` and `GDRIVE_CLIENT_SECRET` on the
+   `/settings` page → **Save all changes**.
+9. Click **Connect Google Drive**. A browser tab opens; approve access (you'll
+   see a "Google hasn't verified this app" warning — click **Continue**, it's
+   normal for personal projects).
+10. Back on `/settings`, you should see a green ✓ "Connected as your@gmail".
+
+### Enable auto-upload
+
+Tick the **"Auto-upload finished runs to Drive"** checkbox in the Google Drive
+Sync section → Save again. Now every successful pipeline run uploads its files
+to Drive automatically.
+
+### Verify it worked
+
+Start a small pipeline run with 2–3 scenes. When it finishes, check:
+
+- Your Google Drive → `Conveyer/Final Videos/<run-name>.mp4` is there.
+- Your Google Drive → `Conveyer/Clips Library/<run-name>/` contains
+  `scene_001.mp4`, `scene_002.mp4`, `clips.json`, `description.md`.
+- The platform's **"Drive library"** sidebar link shows your run with each
+  scene listed.
+
+### If something goes wrong
+
+The status banner on `/settings` tells you exactly what's broken and
+sometimes includes a direct link to fix it (e.g. "Drive API not enabled" →
+clickable Enable URL). Common cases:
+
+- **"Drive API is not enabled"** — click the link in the banner, hit Enable,
+  wait a minute, refresh `/settings`.
+- **"Token expired or revoked"** — click **Reconnect** in the Drive Sync
+  section.
+- **Upload failed mid-run** — local files stay intact. From the run page
+  click the **Drive** card to retry a manual sync.
 
 ---
 
