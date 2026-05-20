@@ -34,9 +34,10 @@ for reuse in future videos. Three things changed in the UI:
      etc.) — also linked in the sidebar. Nothing was removed, just moved.
 
 3. **A new "Google Drive Sync" section on /settings** with a built-in
-   10-step setup guide. The guide walks you through Google Cloud Console
-   (enable Drive API, create OAuth client, paste credentials, connect).
-   Read this section **after** updating.
+   step-by-step setup guide. The guide walks you through Google Cloud
+   Console (enable Drive API, add yourself as a Test user, create OAuth
+   client, paste credentials, connect). Read this section **after**
+   updating.
 
 ### What gets uploaded after each run
 
@@ -300,15 +301,21 @@ on `/settings` and follow the 10 numbered steps. Short summary:
 2. Create a new project (any name — "Conveyer" works).
 3. **APIs & Services → Library → Google Drive API → Enable**.
 4. **APIs & Services → OAuth consent screen → External**. Fill the required
-   fields. On the "Test users" step, add your own Gmail.
-5. **APIs & Services → Credentials → Create OAuth client → Web Application**.
-6. Add authorized redirect URI:
+   fields (app name, support email, developer email) and save.
+5. **⚠ DO NOT SKIP THIS STEP.** Still on the OAuth consent screen, open the
+   **Audience** (or **Test users**) section → **Add users** → type the EXACT
+   Gmail address you'll log in with when connecting → Save. **If you skip
+   this, step 9 fails** with `Access blocked: ... has not completed the
+   Google verification process` / `Error 403: access_denied`.
+6. **APIs & Services → Credentials → Create OAuth client → Web Application**.
+7. Add authorized redirect URI:
    `http://localhost:3000/api/gdrive/oauth/callback`
-7. Copy the **Client ID** and **Client Secret** Google shows you.
-8. Paste them into `GDRIVE_CLIENT_ID` and `GDRIVE_CLIENT_SECRET` on the
-   `/settings` page → **Save all changes**.
-9. Click **Connect Google Drive**. A browser tab opens; approve access (you'll
-   see a "Google hasn't verified this app" warning — click **Continue**, it's
+8. Copy the **Client ID** and **Client Secret** Google shows you. Paste them
+   into `GDRIVE_CLIENT_ID` and `GDRIVE_CLIENT_SECRET` on the `/settings` page
+   → **Save all changes**.
+9. Click **Connect Google Drive**. A browser tab opens; log in with the same
+   Gmail you added as a Test user in step 5; approve access (you'll see a
+   "Google hasn't verified this app" warning — click **Continue**, it's
    normal for personal projects).
 10. Back on `/settings`, you should see a green ✓ "Connected as your@gmail".
 
@@ -334,6 +341,13 @@ The status banner on `/settings` tells you exactly what's broken and
 sometimes includes a direct link to fix it (e.g. "Drive API not enabled" →
 clickable Enable URL). Common cases:
 
+- **"Access blocked: ... has not completed the Google verification process"
+  / "Error 403: access_denied"** — the Gmail you logged in with is NOT in
+  your project's Test users list. This is the #1 setup mistake. Fix: Google
+  Cloud Console → APIs & Services → OAuth consent screen → Audience / Test
+  users → **Add users** → add that exact email → Save → click **Connect
+  Google Drive** again. It's purely a Google Cloud setting — nothing to
+  change in the app.
 - **"Drive API is not enabled"** — click the link in the banner, hit Enable,
   wait a minute, refresh `/settings`.
 - **"Token expired or revoked"** — click **Reconnect** in the Drive Sync

@@ -434,9 +434,17 @@ export default function SettingsPage() {
               <strong>Enable</strong> (this is what makes the API call work later)
             </li>
             <li>
-              APIs &amp; Services → OAuth consent screen → <strong>External</strong> → fill the
-              required fields (app name, support email, developer email) → on the &ldquo;Test users&rdquo;
-              step, add the Gmail address of the account you want clips saved to
+              APIs &amp; Services → <strong>OAuth consent screen</strong> → choose{" "}
+              <strong>External</strong> → fill the required fields (app name, support email,
+              developer email) and save
+            </li>
+            <li style={{ color: "#ffce4d" }}>
+              <strong>⚠ DO NOT SKIP — add yourself as a Test user.</strong> In the OAuth consent
+              screen, open the <strong>Audience</strong> (or <strong>Test users</strong>) section →
+              click <strong>Add users</strong> → type the EXACT Gmail address you will log in with
+              when connecting → Save. If you skip this, connecting fails with{" "}
+              <em>&ldquo;Access blocked: Conveyer has not completed the Google verification
+              process&rdquo; (Error 403: access_denied)</em>.
             </li>
             <li>
               APIs &amp; Services → Credentials → <strong>Create Credentials</strong> → OAuth client
@@ -458,9 +466,9 @@ export default function SettingsPage() {
             </li>
             <li>
               Click <strong>Connect Google Drive</strong> — a browser tab will open, log in with the
-              same Gmail account you added to &ldquo;Test users&rdquo;, click <strong>Continue</strong>
-              {" "}past the &ldquo;app not verified&rdquo; warning (it's normal for personal apps), grant
-              access, and you'll be redirected back here with a green ✓
+              same Gmail account you added to &ldquo;Test users&rdquo; in step 5, click{" "}
+              <strong>Continue</strong> past the &ldquo;app not verified&rdquo; warning (it's normal
+              for personal apps), grant access, and you'll be redirected back here with a green ✓
             </li>
             <li>
               Toggle <strong>Auto-upload finished runs to Drive</strong> above, save once more, and
@@ -469,6 +477,29 @@ export default function SettingsPage() {
               <code>Conveyer/Final Videos/</code> in your Drive root.
             </li>
           </ol>
+
+          {/* Dedicated callout for the most common setup failure */}
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              background: "#2a1a1a",
+              border: "1px solid #5a3a3a",
+              borderRadius: 6,
+            }}
+          >
+            <div style={{ color: "#ff8888", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
+              ❌ Stuck on &ldquo;Access blocked: ... has not completed the Google verification process&rdquo;?
+            </div>
+            <div style={{ color: "#cfcfdf", fontSize: 11.5, lineHeight: 1.6 }}>
+              That &ldquo;Error 403: access_denied&rdquo; means the Gmail you're logging in with is
+              NOT in the project's <strong>Test users</strong> list. Go back to Google Cloud Console
+              → APIs &amp; Services → OAuth consent screen → Audience / Test users → <strong>Add
+              users</strong> → add that exact email → Save. Then click{" "}
+              <strong>Connect Google Drive</strong> again. No code changes needed — it's purely a
+              Google Cloud setting.
+            </div>
+          </div>
           <p
             style={{
               marginTop: 12,
