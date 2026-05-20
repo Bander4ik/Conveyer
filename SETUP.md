@@ -6,16 +6,18 @@ you've never used Terminal or written a line of code in your life, this is the r
 > **Are you on Windows?** The same steps work — see the "On Windows" notes inside each section.
 > All file paths use `.command` on Mac and `.bat` on Windows; otherwise everything is identical.
 
-There are five parts, in order:
+There are five required parts, in order, plus one optional one:
 
 1. [Install Node.js](#1-install-nodejs) — the engine the platform runs on
 2. [Install FFmpeg](#2-install-ffmpeg) — used to stitch videos together
 3. [Download Conveyer Isabell](#3-download-conveyer-isabell) — the project itself
 4. [Get the two required API keys](#4-get-the-two-required-api-keys) — Google + 69labs
 5. [Run your first video](#5-run-your-first-video)
+6. [Optional: connect Google Drive](#6-optional--connect-google-drive) — auto-backup your videos
 
 Each section lists what to click, what to paste, and what to expect. You can stop after any
-section and come back later — the platform remembers where you left off.
+section and come back later — the platform remembers where you left off. Part 6 is fully
+optional — the platform works without it.
 
 ---
 
@@ -202,6 +204,12 @@ The Terminal window must stay open while you use the platform. Closing it stops 
 
 That's it for configuration. Everything else has sensible defaults.
 
+> **About the two settings pages:** the sidebar has **"Keys & Settings"** (just the
+> two required keys + optional Google Drive sync) and **"Advanced settings"** (every
+> tuning knob — voice, images, animation, performance, storage path). For a first
+> run you only need the two keys on the main page. Touch Advanced settings later,
+> only if you want to fine-tune something.
+
 ### Generate your first video
 
 1. Click **"New run"** in the sidebar.
@@ -235,7 +243,37 @@ way to see it:
 - Or in Finder, press **⌘ + Shift + .** (period) to toggle hidden folders on.
 - Or in Finder, press **⌘ + Shift + G** and paste `~/.conveyer-isabell/runs/`.
 
-You can change this location in **Keys & Settings → Storage Location → RUNS_OUTPUT_DIR**.
+You can change this location in **Advanced settings → Storage Location → RUNS_OUTPUT_DIR**.
+
+---
+
+## 6. Optional — connect Google Drive
+
+The platform can automatically upload every finished run to your Google Drive: the
+final video into `Conveyer/Final Videos/`, and the raw scene clips plus a manifest
+into `Conveyer/Clips Library/`. This gives you an off-machine backup and builds a
+library of clips for reuse in future videos.
+
+**This is optional.** Skip it entirely if you don't need cloud backup — everything
+else works without it.
+
+If you do want it:
+
+1. In the platform, open **"Keys & Settings"** and scroll to the blue
+   **"Google Drive Sync"** section.
+2. Click **"First-time setup — how to get Client ID / Secret"** to expand the
+   built-in step-by-step guide.
+3. Follow it. It walks you through Google Cloud Console — creating a project,
+   enabling the Google Drive API, **adding your own Gmail as a Test user**
+   (don't skip this — it's the #1 mistake), creating an OAuth client, and
+   pasting two values back into the platform.
+4. Click **"Connect Google Drive"**, approve access in the browser tab that
+   opens, and you'll get a green ✓.
+5. Tick **"Auto-upload finished runs to Drive"** and save.
+
+After that, a new **"Drive library"** link in the sidebar shows every run you've
+uploaded. Full written walkthrough with troubleshooting is in
+[UPDATING.md](./UPDATING.md#setting-up-google-drive-sync-after-youve-updated).
 
 ---
 
@@ -257,7 +295,7 @@ Another copy of the server is still running. Double-click `stop.command` (Window
 
 ### "ffmpeg: command not found" or assembly fails
 Either FFmpeg isn't installed, or it isn't on your PATH. Easiest fix: in
-**Keys & Settings → Storage Location → FFMPEG_PATH**, paste the absolute path to FFmpeg.
+**Advanced settings → Storage Location → FFMPEG_PATH**, paste the absolute path to FFmpeg.
 - **Apple Silicon Mac (M1/M2/M3):** `/opt/homebrew/bin/ffmpeg`
 - **Intel Mac:** `/usr/local/bin/ffmpeg`
 - **Windows:** something like `C:\Users\YOU\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-X.X.X-full_build\bin\ffmpeg.exe`
@@ -276,9 +314,9 @@ keeps going. When the run finishes with errors, click **"Reassemble from existin
 on the run page — it regenerates just the missing pieces.
 
 ### The voice "swallows" sentence endings or speaks too fast
-Open **Keys & Settings → Sentence Pauses**. Make sure `TTS_AUTO_PAUSE` is `1` and
+Open **Advanced settings → Sentence Pauses**. Make sure `TTS_AUTO_PAUSE` is `1` and
 `TTS_PAUSE_DURATION` is around `0.4`. For an even slower delivery, lower `TTS_SPEED` in
-**Voice Fine-Tuning** from `0.93` down to `0.88`.
+**Advanced settings → Voice Fine-Tuning** from `0.93` down to `0.88`.
 
 ### Images don't match the script's topic
 The look-and-feel comes from the **scene_split** and **image_prompt** fields in `/prompts`.
@@ -287,7 +325,7 @@ topic, edit `image_prompt` to remove space-specific styling, and edit `scene_spl
 the LLM different visual direction.
 
 ### Generation is too slow
-Open **Keys & Settings → Performance (Concurrency)**. Raise `IMAGE_CONCURRENCY` to `6` or
+Open **Advanced settings → Performance (Concurrency)**. Raise `IMAGE_CONCURRENCY` to `6` or
 `7` (7 is the 69labs hard limit). On a powerful CPU, raise `ASSEMBLE_CONCURRENCY` to `6`
 or `8`.
 
@@ -296,10 +334,15 @@ or `8`.
 ## What to do next
 
 - Read [README.md](./README.md) for the architecture overview.
-- Read the inline descriptions on the **Keys & Settings** page — every field is explained.
+- Open **Advanced settings** and read the inline descriptions — every field is explained.
 - Edit the **Prompts** page to control visual style and how the LLM splits scripts.
-- Increase `ANIMATION_RATIO_PERCENT` if you want more video animation in your final output
-  (it defaults to 50% — first half video, second half photos with Ken-Burns).
+- Increase `ANIMATION_RATIO_PERCENT` in **Advanced settings → Animations** if you want more
+  video animation in your final output (it defaults to 50% — first half video, second half
+  photos with Ken-Burns).
+- Connect Google Drive (Part 6 above) so finished videos back up to the cloud automatically.
+
+When a new version is released, see [UPDATING.md](./UPDATING.md) — it covers updating on
+Mac and Windows, with or without git, without losing your keys or run history.
 
 If you get stuck on something not covered here, open an Issue on the GitHub repository with
 a screenshot of the error and the contents of the Terminal window.
