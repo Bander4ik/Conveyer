@@ -97,8 +97,10 @@ async function splitWithGemini(systemPrompt: string, script: string): Promise<st
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.7,
-      // 60K — enough for ~150 scenes in JSON
-      maxOutputTokens: 60000,
+      // 65535 — Gemini 2.5 Flash/Pro hard max for output. Enough for ~170 scenes
+      // in JSON (~20-25 min of narration). For longer videos than that the
+      // script needs to be split into two halves and run as two separate runs.
+      maxOutputTokens: 65535,
       // Disable thinking — for structured output it just wastes the token budget
       thinkingConfig: { thinkingBudget: 0 },
     },
@@ -130,7 +132,9 @@ async function splitWithGemini(systemPrompt: string, script: string): Promise<st
       const reason = cand?.finishReason;
       if (reason && reason !== "STOP") {
         throw new Error(
-          `Gemini finish=${reason} (output cut off, tokens=${json.usageMetadata?.candidatesTokenCount}). Increase maxOutputTokens.`
+          `Gemini finish=${reason} (output cut off, tokens=${json.usageMetadata?.candidatesTokenCount}). ` +
+            `The script is too long for one scene-split pass (we are already at Gemini's max output of 65535 tokens). ` +
+            `Split the script into two halves manually and run them as two separate videos, then stitch in post.`
         );
       }
       if (!text) throw new Error(`Gemini: empty output (${JSON.stringify(json).slice(0, 300)})`);
