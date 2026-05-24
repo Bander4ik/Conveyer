@@ -69,7 +69,8 @@ export const SETTING_KEYS = [
   "TTS_CONCURRENCY",         // parallel TTS jobs
   "ANIMATION_CONCURRENCY",   // parallel img2vid jobs
   "ASSEMBLE_CONCURRENCY",    // parallel FFmpeg clip renders
-  "ASSEMBLE_XFADE_CHUNKS",   // split final xfade into N parallel chunks (1 = monolithic)
+  "ASSEMBLE_XFADE_CHUNKS",            // 1 = monolithic xfade (legacy); anything else = hierarchical
+  "ASSEMBLE_XFADE_MAX_CLIPS_PER_PASS", // hard cap on inputs per ffmpeg xfade call (default 50)
 
   // ── Google Drive sync ─────────────────────────────────────────────
   // OAuth2 credentials from Google Cloud Console (Web Application client).
@@ -204,6 +205,7 @@ export const DEFAULTS: Record<SettingKey, string> = {
   ANIMATION_CONCURRENCY: "3",
   ASSEMBLE_CONCURRENCY: "4",
   ASSEMBLE_XFADE_CHUNKS: "4",
+  ASSEMBLE_XFADE_MAX_CLIPS_PER_PASS: "50",
 
   // Google Drive — all empty by default. User fills client_id/secret;
   // OAuth flow fills refresh_token + email; folders auto-create on first sync.
