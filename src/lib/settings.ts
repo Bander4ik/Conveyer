@@ -185,7 +185,7 @@ export const DEFAULTS: Record<SettingKey, string> = {
   IMAGE_RESOLUTION: "1k",
 
   // Animations
-  ANIMATION_PROVIDER: "off",
+  ANIMATION_PROVIDER: "69labs",
   ANIMATION_MODEL: "veo-video",
   ANIMATION_RATIO_PERCENT: "50",
   ANIMATION_DISTRIBUTION: "first-half",

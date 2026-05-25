@@ -73,7 +73,7 @@ export async function runPipeline(runId: string, script: string) {
     const limitTts = pLimit(ttsConcurrency);
     const limitAnim = pLimit(animConcurrency);
 
-    const animProvider = (getSetting("ANIMATION_PROVIDER") || "off").toLowerCase();
+    const animProvider = (getSetting("ANIMATION_PROVIDER") || "69labs").toLowerCase();
     const animRatio = Number(getSetting("ANIMATION_RATIO_PERCENT") || "50");
     const animDistRaw = (getSetting("ANIMATION_DISTRIBUTION") || "first-half").toLowerCase();
     const animDistribution =
