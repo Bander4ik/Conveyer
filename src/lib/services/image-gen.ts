@@ -78,7 +78,7 @@ async function labs69Image(runId: string, prompt: string, outPath: string): Prom
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const jobId = await createImageJob({ prompt, model, aspectRatio, resolution });
+      const jobId = await createImageJob({ prompt, model, aspectRatio, resolution, runId });
       lastJobId = jobId;
       log(
         runId,

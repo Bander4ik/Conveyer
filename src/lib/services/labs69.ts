@@ -113,16 +113,83 @@ function keyFor(jobId: string): string {
   return keys[0];
 }
 
-async function postJsonWithKey<T>(path: string, body: unknown, key: string): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: authHeadersFor(key),
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) {
+/**
+ * POST helper with two kinds of automatic wait/retry instead of failing the run:
+ *
+ *   • 429 Too Many Requests — short-term rate spike. Honor `Retry-After` when
+ *     given; otherwise back off 20s → 40s → … capped at 10 min. Up to 40 retries.
+ *
+ *   • 403 + "Hourly credit limit exceeded" — the plan's per-hour credit bucket
+ *     emptied. Wait ~10 min for the hour to roll over, then retry. Up to 18
+ *     retries (≈ 3 hours of total waiting). Other 403s (bad key, etc) propagate
+ *     immediately so genuine auth failures don't hang the pipeline.
+ *
+ * `ctx` is optional — pass it to surface the wait in the run log so the user
+ * sees "waiting for hourly window to reset" instead of silent hangs.
+ */
+async function postJsonWithKey<T>(
+  path: string,
+  body: unknown,
+  key: string,
+  ctx?: { runId: string; stage: string }
+): Promise<T> {
+  const MAX_RATE_RETRIES = 40;
+  const MAX_CREDIT_RETRIES = 18;
+  let rateRetry = 0;
+  let creditRetry = 0;
+  while (true) {
+    const r = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: authHeadersFor(key),
+      body: JSON.stringify(body),
+    });
+    if (r.ok) return (await r.json()) as T;
+
+    if (r.status === 429 && rateRetry < MAX_RATE_RETRIES) {
+      rateRetry++;
+      const retryAfter = Number(r.headers.get("retry-after"));
+      const waitMs =
+        Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 10 * 60_000)
+          : Math.min(10 * 60_000, 20_000 * rateRetry);
+      if (ctx) {
+        log(
+          ctx.runId,
+          "warn",
+          `69labs rate limit (429) — waiting ${Math.round(waitMs / 1000)}s then retrying (${rateRetry}/${MAX_RATE_RETRIES})`,
+          { stage: ctx.stage }
+        );
+      }
+      await sleep(waitMs);
+      continue;
+    }
+
+    if (r.status === 403) {
+      const errText = await r.text();
+      const isCreditLimit = /credit limit|hourly|quota/i.test(errText);
+      if (isCreditLimit && creditRetry < MAX_CREDIT_RETRIES) {
+        creditRetry++;
+        const retryAfter = Number(r.headers.get("retry-after"));
+        const waitMs =
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? Math.min(retryAfter * 1000, 30 * 60_000)
+            : 10 * 60_000;
+        if (ctx) {
+          log(
+            ctx.runId,
+            "warn",
+            `69labs hourly credit limit (403) — waiting ${Math.round(waitMs / 60_000)} min for the hourly window to reset, then retrying (${creditRetry}/${MAX_CREDIT_RETRIES})`,
+            { stage: ctx.stage }
+          );
+        }
+        await sleep(waitMs);
+        continue;
+      }
+      throw new Error(`69labs POST ${path} 403: ${errText.slice(0, 400)}`);
+    }
+
     throw new Error(`69labs POST ${path} ${r.status}: ${(await r.text()).slice(0, 400)}`);
   }
-  return (await r.json()) as T;
 }
 
 interface JobCreatedResponse {
@@ -153,15 +220,19 @@ export async function createTtsJob(opts: {
   autoPauseEnabled?: boolean;
   autoPauseDuration?: number;
   autoPauseFrequency?: number;
+  /** Optional — enables 429 / hourly-credit wait logging into the run log. */
+  runId?: string;
 }): Promise<string> {
   const key = pool.pick();
+  const ctx = opts.runId ? { runId: opts.runId, stage: "tts" } : undefined;
   try {
     // Voice-clone uses a different endpoint
     if (opts.voiceProvider === "voice-clone") {
       const resp = await postJsonWithKey<JobCreatedResponse>(
         "/voice-clones/generate",
         { voiceCloneId: opts.voiceId, text: opts.text },
-        key
+        key,
+        ctx
       );
       jobKeyMap.set(resp.id, key);
       return resp.id;
@@ -181,7 +252,7 @@ export async function createTtsJob(opts: {
       if (opts.autoPauseDuration !== undefined) body.autoPauseDuration = opts.autoPauseDuration;
       if (opts.autoPauseFrequency !== undefined) body.autoPauseFrequency = opts.autoPauseFrequency;
     }
-    const resp = await postJsonWithKey<JobCreatedResponse>("/tts/generate", body, key);
+    const resp = await postJsonWithKey<JobCreatedResponse>("/tts/generate", body, key, ctx);
     jobKeyMap.set(resp.id, key);
     return resp.id;
   } catch (e) {
@@ -199,8 +270,11 @@ export async function createImageJob(opts: {
   aspectRatio?: string;
   resolution?: string;
   imageUrls?: string[];
+  /** Optional — enables 429 / hourly-credit wait logging into the run log. */
+  runId?: string;
 }): Promise<string> {
   const key = pool.pick();
+  const ctx = opts.runId ? { runId: opts.runId, stage: "image" } : undefined;
   try {
     const body: Record<string, unknown> = { prompt: opts.prompt };
     if (opts.model) body.model = opts.model;
@@ -211,7 +285,8 @@ export async function createImageJob(opts: {
     const resp = await postJsonWithKey<JobCreatedResponse | MultiJobCreatedResponse>(
       "/images/generate",
       body,
-      key
+      key,
+      ctx
     );
     const id = "jobs" in resp ? resp.jobs[0].id : resp.id;
     jobKeyMap.set(id, key);
@@ -242,6 +317,8 @@ export async function createVideoJob(opts: {
   imageJobId?: string;
   imageUrls?: string[];
   mute?: boolean;
+  /** Optional — enables 429 / hourly-credit wait logging into the run log. */
+  runId?: string;
 }): Promise<string> {
   // Pick a key — but if we're chaining off an existing image job, reuse its key
   let key: string;
@@ -251,6 +328,7 @@ export async function createVideoJob(opts: {
   } else {
     key = pool.pick();
   }
+  const ctx = opts.runId ? { runId: opts.runId, stage: "animate" } : undefined;
 
   try {
     const body: Record<string, unknown> = { prompt: opts.prompt };
@@ -264,7 +342,8 @@ export async function createVideoJob(opts: {
     const resp = await postJsonWithKey<JobCreatedResponse | MultiJobCreatedResponse>(
       "/videos/generate",
       body,
-      key
+      key,
+      ctx
     );
     const id = "jobs" in resp ? resp.jobs[0].id : resp.id;
     jobKeyMap.set(id, key);
