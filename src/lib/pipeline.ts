@@ -85,10 +85,18 @@ export async function runPipeline(runId: string, script: string) {
         ? pickScenesToAnimate(scenes, animRatio, animDistribution)
         : new Set<number>();
 
+    // Worker-pool concurrency. Bounds peak RAM by capping the number of pending
+    // scene closures and plimit queue depth — instead of creating one async
+    // closure per scene up front (which on a 1 500-scene run kept ~1 500
+    // closures + ~4 500 plimit-queue items alive simultaneously). The plimit
+    // limiters still throttle the actual API calls; the worker count just
+    // bounds how many SCENE closures live at once.
+    const WORKER_COUNT = Math.max(20, keyCount * 5);
+
     log(
       runId,
       "info",
-      `Generating ${scenes.length} scenes. Keys: ${keyCount} · Concurrency (per key × keys): TTS=${ttsConcurrencyPerKey}×${keyCount}=${ttsConcurrency}, image=${imageConcurrencyPerKey}×${keyCount}=${imageConcurrency}, anim=${animConcurrencyPerKey}×${keyCount}=${animConcurrency}. Animation: ${animProvider !== "off" ? `${animTargets.size}/${scenes.length} scenes (${animDistribution})` : "off"}`,
+      `Generating ${scenes.length} scenes. Keys: ${keyCount} · Concurrency (per key × keys): TTS=${ttsConcurrencyPerKey}×${keyCount}=${ttsConcurrency}, image=${imageConcurrencyPerKey}×${keyCount}=${imageConcurrency}, anim=${animConcurrencyPerKey}×${keyCount}=${animConcurrency}. Animation: ${animProvider !== "off" ? `${animTargets.size}/${scenes.length} scenes (${animDistribution})` : "off"} · workers=${WORKER_COUNT}`,
       { stage: "pipeline" }
     );
 
@@ -97,67 +105,80 @@ export async function runPipeline(runId: string, script: string) {
       _imgProvider?: string;
     }) | null;
 
-    const settled: SceneResult[] = await Promise.all(
-      scenes.map(async (scene): Promise<SceneResult> => {
-        try {
-          // Cancellation check before starting new scene tasks.
-          // Already-running tasks complete naturally.
-          checkCancelled(runId);
-          const [audio, image] = await Promise.all([
-            limitTts(() => synthesizeScene(runId, scene, audioDir)),
-            limitImg(() => generateImage(runId, scene, imgDir)),
-          ]);
+    const processScene = async (scene: typeof scenes[number]): Promise<SceneResult> => {
+      try {
+        // Cancellation check before starting new scene tasks.
+        // Already-running tasks complete naturally.
+        checkCancelled(runId);
+        const [audio, image] = await Promise.all([
+          limitTts(() => synthesizeScene(runId, scene, audioDir)),
+          limitImg(() => generateImage(runId, scene, imgDir)),
+        ]);
 
-          // 2b. If this scene is in the animation target set, start the img2vid
-          //     job RIGHT NOW — no need to wait for other scenes' images.
-          //     If the user pre-selected a Drive clip to reuse for this scene,
-          //     download it instead of running animateScene (skips Veo entirely).
-          let videoPath: string | null = null;
-          const reuseFileId = reuseMap[String(scene.index)];
-          if (reuseFileId) {
-            try {
-              videoPath = await downloadReusedClip(runId, scene, reuseFileId, animDir);
-            } catch (e) {
-              log(
-                runId,
-                "warn",
-                `reuse #${scene.index} failed, falling back to live img2vid: ${(e as Error).message}`,
-                { stage: "reuse" }
-              );
-            }
+        // 2b. If this scene is in the animation target set, start the img2vid
+        //     job RIGHT NOW — no need to wait for other scenes' images.
+        //     If the user pre-selected a Drive clip to reuse for this scene,
+        //     download it instead of running animateScene (skips Veo entirely).
+        let videoPath: string | null = null;
+        const reuseFileId = reuseMap[String(scene.index)];
+        if (reuseFileId) {
+          try {
+            videoPath = await downloadReusedClip(runId, scene, reuseFileId, animDir);
+          } catch (e) {
+            log(
+              runId,
+              "warn",
+              `reuse #${scene.index} failed, falling back to live img2vid: ${(e as Error).message}`,
+              { stage: "reuse" }
+            );
           }
-          if (!videoPath && animTargets.has(scene.index)) {
-            try {
-              videoPath = await limitAnim(() =>
-                animateScene(runId, scene, image.filePath, animDir, {
-                  providerJobId: image.providerJobId,
-                  imageProvider: image.provider,
-                })
-              );
-            } catch (e) {
-              log(
-                runId,
-                "warn",
-                `img2vid #${scene.index} failed, falling back to Ken-Burns: ${(e as Error).message}`,
-                { stage: "animate" }
-              );
-            }
-          }
-
-          return {
-            scene,
-            imagePath: image.filePath,
-            videoPath,
-            audio,
-            _imgProviderJobId: image.providerJobId,
-            _imgProvider: image.provider,
-          };
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          log(runId, "error", `Scene #${scene.index} failed: ${msg.slice(0, 200)}`, { stage: "pipeline" });
-          return null;
         }
-      })
+        if (!videoPath && animTargets.has(scene.index)) {
+          try {
+            videoPath = await limitAnim(() =>
+              animateScene(runId, scene, image.filePath, animDir, {
+                providerJobId: image.providerJobId,
+                imageProvider: image.provider,
+              })
+            );
+          } catch (e) {
+            log(
+              runId,
+              "warn",
+              `img2vid #${scene.index} failed, falling back to Ken-Burns: ${(e as Error).message}`,
+              { stage: "animate" }
+            );
+          }
+        }
+
+        return {
+          scene,
+          imagePath: image.filePath,
+          videoPath,
+          audio,
+          _imgProviderJobId: image.providerJobId,
+          _imgProvider: image.provider,
+        };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log(runId, "error", `Scene #${scene.index} failed: ${msg.slice(0, 200)}`, { stage: "pipeline" });
+        return null;
+      }
+    };
+
+    // Worker pool: each worker pulls the next scene from a shared cursor.
+    // Result array is indexed by scene order so downstream assembly is in order.
+    const settled: SceneResult[] = new Array(scenes.length).fill(null);
+    let nextSceneIdx = 0;
+    const worker = async (): Promise<void> => {
+      while (true) {
+        const idx = nextSceneIdx++;
+        if (idx >= scenes.length) return;
+        settled[idx] = await processScene(scenes[idx]);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(WORKER_COUNT, scenes.length) }, () => worker())
     );
 
     const sceneAssets = settled.filter((x): x is NonNullable<SceneResult> => x !== null);
