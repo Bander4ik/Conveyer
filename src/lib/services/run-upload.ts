@@ -119,10 +119,15 @@ export async function syncRunToDrive(
   const uploadedClips: ClipsManifestEntry[] = [];
   for (const asset of sceneAssets) {
     if (!asset.videoPath || !fs.existsSync(asset.videoPath)) {
+      // Expected for image-only (Ken-Burns) scenes — those never produce a raw
+      // video file because they're a still image with a zoom-pan filter applied
+      // directly during final assembly. Log at debug level so the run log
+      // isn't flooded with scary "warn" lines for ~half the scenes of a normal
+      // first-half-clips video.
       log(
         runId,
-        "warn",
-        `Scene #${asset.scene.index}: no raw video to upload, skipped`,
+        "debug",
+        `Scene #${asset.scene.index}: no raw video to upload (Ken-Burns image-only scene), skipped`,
         { stage: "gdrive" }
       );
       continue;
