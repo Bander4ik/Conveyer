@@ -1,17 +1,22 @@
 # Conveyer
 
-Local pipeline platform for producing faceless AI YouTube videos in the style of channels
-like [The Sky Lab](https://www.youtube.com/@TheSkyLab-u4j) and
-[Interstellar Dreams](https://www.youtube.com/@InterstellarDreams-w5g):
-**script → scenes → voiceover + visuals → final MP4**.
+A **local pipeline for making faceless AI YouTube videos** — paste a script, get a
+finished MP4: **script → scenes → voiceover + visuals → final video**.
+
+The engine is **theme-agnostic**. It ships tuned for a **space / astronomy** channel
+(in the style of [The Sky Lab](https://www.youtube.com/@TheSkyLab-u4j) and
+[Interstellar Dreams](https://www.youtube.com/@InterstellarDreams-w5g)) — but that
+theme lives entirely in the editable prompts, not in the code. Point the prompts at
+cooking, history, finance, true crime, anything, and you get that niche instead.
+See [Retheme it to your niche](#retheme-it-to-your-niche) below.
 
 > 👋 **Brand new and don't know what npm / Node / API keys are?**
-> Read [SETUP.md](./SETUP.md) — a non-technical step-by-step install guide that walks you
-> through everything from zero. Come back to this README once you have the platform running.
+> Read [SETUP.md](./SETUP.md) — a non-technical, step-by-step install guide from zero.
+> Come back here once the platform is running.
 >
-> 🔄 **Already running an older version?** See [UPDATING.md](./UPDATING.md) for step-by-step
-> update instructions (ZIP and git, Mac and Windows). Your API keys, prompts, and runs
-> are preserved automatically.
+> 🔄 **Already running an older version?** See [UPDATING.md](./UPDATING.md) for
+> step-by-step update instructions (ZIP and git, Mac and Windows). Your API keys,
+> prompts, and runs are preserved automatically.
 
 Everything is controlled from a local web UI:
 
@@ -58,12 +63,38 @@ Then open http://localhost:3000.
 Open `/settings`. The top section, **Required API Keys**, shows the two keys you must
 provide before anything works:
 
-1. **`GOOGLE_API_KEY`** — Google AI Studio (Gemini). Free tier is enough for testing.
-   Get one at https://aistudio.google.com/app/apikey
-2. **`LABS69_API_KEY`** — 69labs.vip. Single subscription covers TTS + images + video animation.
-   Sign up at https://69labs.vip, copy the key from your account.
+1. **`GOOGLE_API_KEY`** — Google AI Studio (Gemini), splits the script into scenes.
+   Free tier is enough for testing. Get one at https://aistudio.google.com/app/apikey
+2. **`LABS69_API_KEY`** — 69labs.vip. A single subscription covers **voiceover + images
+   + video animation**. Sign up at https://69labs.vip, copy the key from your account.
 
 That's it. All other settings have sensible defaults.
+
+---
+
+## Retheme it to your niche
+
+The video style is **100% in the prompts**, not the code. Nothing in the pipeline knows
+or cares that the defaults are about space. To switch the channel to a different topic,
+open **/prompts** and edit three fields — no coding, no restart:
+
+| Prompt | Controls | Default (space) |
+|---|---|---|
+| **Scene Split** | How the script becomes scenes, and what each scene's visual should depict | "The channel is space-focused — astronomy, astrophysics… stars, planets, nebulae… NO people in frame." |
+| **Image Style** | The look applied to every generated image | "real-world astronomy footage style, NASA / ESA mission imagery…" |
+| **Animation Motion** | How clips move | generic "subtle cinematic camera motion, gentle parallax…" |
+
+For example, to make a **cooking** channel you'd rewrite the Scene Split prompt to
+describe food/kitchen visuals, and the Image Style prompt to "appetising food
+photography, warm kitchen light…". The engine does the rest exactly the same way.
+
+Tip for visual flow: in the Scene Split prompt, tell Gemini to **carry the setting,
+lighting and time-of-day forward across consecutive scenes** and only reset the visual
+world when the script itself moves to a new topic. Gemini sees the whole script at once,
+so it can keep neighbouring clips in one coherent world instead of cutting to an
+unrelated shot every few seconds.
+
+Changes take effect on the **next run**. The old runs keep whatever prompt they used.
 
 ---
 
@@ -73,20 +104,35 @@ That's it. All other settings have sensible defaults.
 script
   │
   ▼
-[1] scene_split   (Gemini / Claude → JSON array of scenes)
+[1] scene_split   (Gemini → JSON array of scenes)
   │  each scene: { text, visual_prompt, duration_hint_sec }
+  │  Long scripts (>3000 words) are auto-split into chunks and stitched back —
+  │  so 1–2 hour videos work without hitting Gemini's output limit.
   ▼
-[2] for each scene, in parallel (with concurrency limits):
-       ├─ TTS (ElevenLabs via 69labs / OpenAI) → mp3
-       ├─ image (nano-banana-pro / imagen-4 / flux) → png
-       └─ img2vid (Veo / Kling) → mp4 (only for scenes selected by ratio + distribution)
+[2] for each scene, in parallel (concurrency-limited, via a worker pool):
+       ├─ TTS        (Edge TTS via 69labs by default; ElevenLabs / OpenAI optional) → mp3
+       ├─ image      (nano-banana-pro via 69labs) → png
+       └─ img2vid    (Veo via 69labs) → mp4
+                     Only ~half the scenes get a real animated clip by default
+                     (the FIRST half — see ANIMATION_RATIO_PERCENT / ANIMATION_DISTRIBUTION).
+                     The rest become Ken-Burns (slow zoom/pan over the still image).
   │
   ▼
-[3] assemble (FFmpeg) — every (image or video) + audio → clip with Ken-Burns or
-    live motion, then xfade all clips into final.mp4
+[3] assemble (FFmpeg) — each scene's (clip or Ken-Burns image) + its voiceover →
+    one clip, then xfade every clip into final.mp4. Long videos assemble in a
+    hierarchical, RAM-bounded pass so hundreds of clips don't crash FFmpeg.
 ```
 
 Every stage logs to the database AND streams to the UI in real time over SSE.
+
+### Defaults at a glance
+| Stage | Default | Change in |
+|---|---|---|
+| Scene split | Gemini `gemini-flash-latest` | /settings |
+| Voiceover | 69labs → Edge TTS, voice `en-US-GuyNeural`, speed 0.93 | /settings |
+| Images | 69labs `nano-banana-pro`, 16:9, 1k | /settings |
+| Animation | 69labs `veo-video`, 50% of scenes, first-half | /settings |
+| Final video | 1920×1080, 30 fps, 0.5s crossfade | /settings |
 
 ---
 
@@ -107,6 +153,28 @@ either location.
 > **macOS:** the default folder starts with `.` which means Finder hides it. To see it:
 > in Finder press **⌘ + Shift + .** (period) to toggle hidden folders, or press
 > **⌘ + Shift + G** and paste `~/.conveyer-isabell/runs/`.
+
+---
+
+## Performance notes (long videos)
+
+The pipeline is built to survive multi-hour scripts (1000+ scenes):
+
+- **Long scripts auto-chunk** at sentence boundaries for scene-splitting, then merge
+  back into one scene list — no manual splitting needed.
+- **A worker pool** bounds how much the run holds in memory, so a 1500-scene run doesn't
+  balloon RAM and lag your laptop.
+- **Every 69labs call has a timeout** — a stalled connection aborts and retries instead
+  of hanging the whole run forever.
+- **The hourly-credit cap is handled gracefully** — when 69labs returns "hourly credit
+  limit exceeded", the run *waits* for the window to reset and retries rather than
+  failing. The run gets slower at the cap, but it doesn't crash.
+- **The run page shows the most recent ~500 log lines** so the browser stays responsive
+  even with tens of thousands of total log entries (the full history stays in the DB).
+
+To go faster against your plan's hourly cap, paste **multiple 69labs API keys** (one per
+line) in `/settings → LABS69_API_KEY` — each account has its own hourly bucket and the
+pipeline load-balances across them.
 
 ---
 
@@ -136,8 +204,6 @@ shows up in the live UI automatically.
 - Background music with auto-ducking under the narrator.
 - Batch mode: list of topics → N full videos overnight.
 - Direct upload to YouTube via Data API once a run finishes.
-- Keyframe chaining for img2vid (last frame of scene N = first frame of scene N+1) so
-  clips visually flow into each other.
 
 ---
 
