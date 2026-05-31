@@ -1,4 +1,4 @@
-# Conveyer Isabell
+# Conveyer
 
 Local pipeline platform for producing faceless AI YouTube videos in the style of channels
 like [The Sky Lab](https://www.youtube.com/@TheSkyLab-u4j) and
