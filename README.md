@@ -110,7 +110,7 @@ script
   │  so 1–2 hour videos work without hitting Gemini's output limit.
   ▼
 [2] for each scene, in parallel (concurrency-limited, via a worker pool):
-       ├─ TTS        (Edge TTS via 69labs by default; ElevenLabs / OpenAI optional) → mp3
+       ├─ TTS        (ElevenLabs voices via 69labs by default; Edge TTS / OpenAI optional) → mp3
        ├─ image      (nano-banana-pro via 69labs) → png
        └─ img2vid    (Veo via 69labs) → mp4
                      Only ~half the scenes get a real animated clip by default
@@ -129,7 +129,7 @@ Every stage logs to the database AND streams to the UI in real time over SSE.
 | Stage | Default | Change in |
 |---|---|---|
 | Scene split | Gemini `gemini-flash-latest` | /settings |
-| Voiceover | 69labs → Edge TTS, voice `en-US-GuyNeural`, speed 0.93 | /settings |
+| Voiceover | 69labs → ElevenLabs "Christopher", model `eleven_multilingual_v2`, speed 0.93 | /settings |
 | Images | 69labs `nano-banana-pro`, 16:9, 1k | /settings |
 | Animation | 69labs `veo-video`, 50% of scenes, first-half | /settings |
 | Final video | 1920×1080, 30 fps, 0.5s crossfade | /settings |

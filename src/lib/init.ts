@@ -19,5 +19,21 @@ export function ensureInit() {
     setSetting("ANIMATION_PROVIDER", "69labs");
   }
 
+  // One-time migration: the old TTS default pointed at Edge TTS
+  // (TTS_VOICE_PROVIDER=edgetts + en-US-GuyNeural) even though the voice
+  // fine-tuning defaults (stability / similarity / style / speaker-boost) are
+  // all ElevenLabs-only — an inconsistency. The intended default is ElevenLabs
+  // through 69labs. Flip ONLY DBs still on that exact untouched legacy combo
+  // so a deliberate Edge / cloned-voice choice (any other voice id) is left
+  // alone. Anyone who wants free Edge TTS can re-pick it in /advanced.
+  if (
+    getSetting("TTS_VOICE_PROVIDER") === "edgetts" &&
+    getSetting("TTS_VOICE_ID") === "en-US-GuyNeural"
+  ) {
+    setSetting("TTS_VOICE_PROVIDER", "elevenlabs");
+    setSetting("TTS_VOICE_ID", "G17SuINrv2H9FC6nvetn");
+    if (!getSetting("TTS_MODEL")) setSetting("TTS_MODEL", "eleven_multilingual_v2");
+  }
+
   inited = true;
 }

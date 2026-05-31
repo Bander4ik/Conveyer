@@ -159,11 +159,14 @@ export const DEFAULTS: Record<SettingKey, string> = {
   SCENE_SPLIT_PROVIDER: "google",
   SCENE_SPLIT_MODEL: "gemini-flash-latest",
 
-  // TTS
+  // TTS — runs through 69labs; ElevenLabs is the high-quality voice family and
+  // the intended default (the voice fine-tuning below is all ElevenLabs-specific).
+  // Edge TTS (free Microsoft voices) and voice-clone are the alternatives,
+  // switchable via TTS_VOICE_PROVIDER.
   TTS_PROVIDER: "69labs",
-  TTS_VOICE_PROVIDER: "edgetts",
-  TTS_VOICE_ID: "en-US-GuyNeural",
-  TTS_MODEL: "",
+  TTS_VOICE_PROVIDER: "elevenlabs",
+  TTS_VOICE_ID: "G17SuINrv2H9FC6nvetn", // ElevenLabs "Christopher" — warm documentary male
+  TTS_MODEL: "eleven_multilingual_v2",
   TTS_SPLIT_TYPE: "smart",
 
   // Voice fine-tuning (slightly slower + small style for documentary feel)
