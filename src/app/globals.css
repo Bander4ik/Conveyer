@@ -1,59 +1,361 @@
 @import "tailwindcss";
 
+/* ───────────────────────────────────────────────────────────────────────
+   Conveyer Isabell — premium dark design system
+   Apple-grade: deep neutral surfaces, hairline borders, soft shadows,
+   smooth transitions, a single violet accent (the channel's identity).
+
+   Structure is shared with the other Conveyer forks; the palette here keeps
+   Isabell's existing bluish-dark surfaces + violet accent so the hardcoded
+   colors in individual pages blend seamlessly.
+   ─────────────────────────────────────────────────────────────────────── */
+
 :root {
+  /* Surfaces — bluish dark */
   --bg: #0a0a0f;
-  --fg: #e8e8f0;
-  --muted: #8a8aa0;
-  --accent: #7c5cff;
-  --card: #14141d;
+  --bg-deep: #07070b;
+  --surface: #14141d;
+  --surface-2: #1c1c28;
+  --surface-hover: #232334;
+  --field: #0f0f17;
+
+  /* Borders */
   --border: #232334;
+  --border-strong: #34344a;
+
+  /* Text */
+  --fg: #e8e8f0;
+  --fg-muted: #8a8aa0;
+  --fg-faint: #5a5a70;
+
+  /* Accent — violet */
+  --accent: #7c5cff;
+  --accent-hover: #8f72ff;
+  --accent-press: #6a4bef;
+  --accent-soft: rgba(124, 92, 255, 0.14);
+  --accent-ring: rgba(124, 92, 255, 0.38);
+
+  /* Semantic */
+  --success: #6dd66d;
+  --success-soft: rgba(109, 214, 109, 0.13);
+  --warning: #ffce4d;
+  --warning-soft: rgba(255, 206, 77, 0.13);
+  --danger: #ff6d6d;
+  --danger-soft: rgba(255, 109, 109, 0.13);
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 44px rgba(0, 0, 0, 0.55);
+
+  /* Radius */
+  --r-sm: 7px;
+  --r: 11px;
+  --r-lg: 16px;
+
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Back-compat aliases — older pages reference these token names directly */
+  --card: var(--surface);
+  --muted: var(--fg-muted);
 }
 
-html, body {
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Roboto, ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.011em;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #45454f;
+}
+
+/* ── Typography ────────────────────────────────────────────────────────── */
+h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+h2 {
+  font-size: 16.5px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+}
+h3 {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+}
+a {
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+code,
+.mono {
+  font-family: "SF Mono", ui-monospace, "JetBrains Mono", "Cascadia Code",
+    Menlo, Consolas, monospace;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.btn,
+.btn-secondary,
+.btn-ghost,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease),
+    transform 0.08s var(--ease), opacity 0.15s var(--ease);
+  white-space: nowrap;
+  user-select: none;
+  text-decoration: none;
+}
+.btn:active,
+.btn-secondary:active,
+.btn-ghost:active,
+.btn-danger:active {
+  transform: scale(0.975);
+}
+.btn:disabled,
+.btn-secondary:disabled,
+.btn-ghost:disabled,
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn {
   background: var(--accent);
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  font-weight: 600;
-  display: inline-block;
+  color: #fff;
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
-.btn:hover { filter: brightness(1.1); }
-.btn-secondary {
-  background: var(--card);
-  border: 1px solid var(--border);
+.btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-secondary,
+.btn-ghost {
+  background: var(--surface-2);
   color: var(--fg);
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
+  border-color: var(--border);
 }
+.btn-secondary:hover:not(:disabled),
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: rgba(255, 109, 109, 0.25);
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(255, 109, 109, 0.2);
+}
+
+.btn-sm {
+  padding: 6px 11px;
+  font-size: 12.5px;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
 .card {
-  background: var(--card);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  padding: 1rem;
+  border-radius: var(--r);
+  padding: 18px;
 }
-.input, .textarea, .select {
-  background: #0f0f17;
+.card-inset {
+  background: var(--bg-deep);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  border-radius: var(--r-sm);
+}
+
+/* ── Form controls ─────────────────────────────────────────────────────── */
+.input,
+.textarea,
+.select,
+select.input {
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 9px 12px;
   width: 100%;
   color: var(--fg);
   font-family: inherit;
+  font-size: 13.5px;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  outline: none;
 }
-.textarea { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 0.85rem; }
-.label { color: var(--muted); font-size: 0.8rem; display: block; margin-bottom: 0.25rem; }
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--fg-faint);
+}
+.input:focus,
+.textarea:focus,
+.select:focus,
+select.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.textarea {
+  font-family: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas,
+    monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.label {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 550;
+  display: block;
+  margin-bottom: 5px;
+  letter-spacing: -0.005em;
+}
+
+/* ── Status tags ───────────────────────────────────────────────────────── */
 .tag {
-  display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
-  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
-.tag-pending  { background: #2a2a3a; color: #b8b8c8; }
-.tag-running  { background: #4b3300; color: #ffce4d; }
-.tag-done     { background: #1d3a1d; color: #6dd66d; }
-.tag-error    { background: #3a1d1d; color: #ff6d6d; }
-.tag-cancelled { background: #2a2a3a; color: #8a8aa0; }
+.tag-pending {
+  background: #2a2a3a;
+  color: #b8b8c8;
+}
+.tag-running {
+  background: #4b3300;
+  color: var(--warning);
+}
+.tag-done {
+  background: #1d3a1d;
+  color: var(--success);
+}
+.tag-error {
+  background: #3a1d1d;
+  color: var(--danger);
+}
+.tag-cancelled {
+  background: #2a2a3a;
+  color: var(--fg-muted);
+}
+
+/* ── Badges (small inline chips) ───────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.badge-accent {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+.badge-success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.badge-neutral {
+  background: var(--surface-hover);
+  color: var(--fg-muted);
+}
+
+/* ── Helpers ───────────────────────────────────────────────────────────── */
+.muted {
+  color: var(--fg-muted);
+}
+.faint {
+  color: var(--fg-faint);
+}
+.divider {
+  height: 1px;
+  background: var(--border);
+  border: 0;
+  margin: 16px 0;
+}
+.hover-row {
+  transition: background 0.13s var(--ease);
+}
+.hover-row:hover {
+  background: var(--surface-hover);
+}
+
+/* ── Sidebar nav ───────────────────────────────────────────────────────── */
+.nav-link {
+  display: block;
+  padding: 8px 11px;
+  border-radius: var(--r-sm);
+  margin-bottom: 2px;
+  color: var(--fg-muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.13s var(--ease), color 0.13s var(--ease);
+}
+.nav-link:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+  text-decoration: none;
+}

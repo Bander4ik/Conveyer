@@ -7,39 +7,94 @@ export const metadata = {
   description: "Local pipeline platform for faceless AI YouTube videos.",
 };
 
+const NAV: { href: string; label: string }[] = [
+  { href: "/", label: "New run" },
+  { href: "/runs", label: "Run history" },
+  { href: "/library", label: "Drive library" },
+  { href: "/prompts", label: "Prompts" },
+  { href: "/settings", label: "Keys & Settings" },
+  { href: "/settings/advanced", label: "Advanced settings" },
+];
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <div style={{ minHeight: "100vh", display: "flex" }}>
-          <nav className="card" style={{ width: 220, margin: 16, padding: 20, height: "fit-content" }}>
-            <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 16 }}>
-              Conveyer&nbsp;Isabell
+        <div style={{ display: "flex", minHeight: "100vh" }}>
+          <aside
+            style={{
+              width: 240,
+              flexShrink: 0,
+              height: "100vh",
+              position: "sticky",
+              top: 0,
+              background: "var(--bg-deep)",
+              borderRight: "1px solid var(--border)",
+              display: "flex",
+              flexDirection: "column",
+              padding: "20px 14px",
+            }}
+          >
+            {/* Logo */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 8px 22px" }}>
+              <div
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  background: "linear-gradient(135deg, var(--accent), #b083ff)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 800,
+                  fontSize: 15,
+                  color: "#fff",
+                  boxShadow: "var(--shadow-sm)",
+                  flexShrink: 0,
+                }}
+              >
+                C
+              </div>
+              <div style={{ lineHeight: 1.15 }}>
+                <div style={{ fontWeight: 700, fontSize: 14.5, letterSpacing: "-0.02em" }}>
+                  Conveyer Isabell
+                </div>
+                <div style={{ fontSize: 11, color: "var(--fg-faint)" }}>AI video pipeline</div>
+              </div>
             </div>
-            <Link href="/" style={navLink}>New run</Link>
-            <Link href="/runs" style={navLink}>Run history</Link>
-            <Link href="/library" style={navLink}>Drive library</Link>
-            <Link href="/prompts" style={navLink}>Prompts</Link>
-            <Link href="/settings" style={navLink}>Keys &amp; Settings</Link>
-            <Link href="/settings/advanced" style={navLink}>Advanced settings</Link>
-            <div style={{ marginTop: 24, fontSize: 12, color: "#8a8aa0" }}>
-              v0.1 · local
+
+            {/* Nav */}
+            <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {NAV.map((item) => (
+                <Link key={item.href} href={item.href} className="nav-link">
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* Footer */}
+            <div style={{ marginTop: "auto", paddingTop: 14 }}>
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  paddingTop: 12,
+                  fontSize: 11,
+                  color: "var(--fg-faint)",
+                  padding: "12px 10px 2px",
+                }}
+              >
+                v0.1 · runs locally
+              </div>
             </div>
-          </nav>
-          <main style={{ flex: 1, padding: "16px 24px 64px 8px", maxWidth: 1100 }}>
-            {children}
+          </aside>
+
+          <main style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
+            <div style={{ width: "100%", maxWidth: 1080, padding: "32px 36px 80px" }}>
+              {children}
+            </div>
           </main>
         </div>
       </body>
     </html>
   );
 }
-
-const navLink: React.CSSProperties = {
-  display: "block",
-  padding: "8px 10px",
-  borderRadius: 8,
-  marginBottom: 4,
-  color: "#e8e8f0",
-  textDecoration: "none",
-};
