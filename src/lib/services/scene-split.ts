@@ -6,6 +6,7 @@ import { getPrompt } from "../prompts";
 import { log } from "../logger";
 import { getRunDir } from "../run-paths";
 import { withRetry, withFallback, backoffMs, formatWait, RetryableError } from "../retry";
+import { extractJson } from "../json-extract";
 
 export interface Scene {
   index: number;
@@ -249,21 +250,21 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
   }
 }
 
-async function splitWithGemini(systemPrompt: string, script: string, runId: string): Promise<string> {
-  const apiKey = getSetting("GOOGLE_API_KEY");
-  if (!apiKey) throw new Error("GOOGLE_API_KEY is not set (Settings)");
+/**
+ * Thinking control differs by model family, and the two fields are mutually
+ * exclusive: Gemini 3.x uses `thinkingLevel`, while 2.5/earlier use
+ * `thinkingBudget`. Sending 2.5's `thinkingBudget` to a 3.x model degrades its
+ * structured-output mode — that's exactly why the gemini-3.1-flash-lite fallback
+ * returned reasoning-polluted, non-JSON text. So pick the right field per model.
+ */
+function geminiThinkingConfig(model: string): Record<string, unknown> {
+  return model.startsWith("gemini-3")
+    ? { thinkingLevel: "low" } // 3.x flash-lite can't fully disable thinking; LOW is the floor
+    : { thinkingBudget: 0 }; // 2.5/earlier: 0 = thinking off
+}
 
-  // Model fallback chain. 503 "high demand" is per-model capacity: when Google
-  // is congesting the primary model, a DIFFERENT model usually sails straight
-  // through because it sits on a separate capacity pool. So we probe the
-  // primary briefly (~30 s) and, if it keeps 503-ing, pivot to the fallback
-  // model — which then gets the full ~2 h patience. Both default to models with
-  // a 65 535-token output cap, so long chunks are never truncated.
-  const primary = getSetting("SCENE_SPLIT_MODEL") || "gemini-2.5-flash";
-  const fallback = (getSetting("SCENE_SPLIT_FALLBACK_MODEL") || "").trim();
-  const models = fallback && fallback !== primary ? [primary, fallback] : [primary];
-
-  const body = JSON.stringify({
+function buildGeminiBody(systemPrompt: string, script: string, model: string): string {
+  return JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: "user", parts: [{ text: `Script:\n\n${script}` }] }],
     generationConfig: {
@@ -274,15 +275,33 @@ async function splitWithGemini(systemPrompt: string, script: string, runId: stri
       // 11 K-token buffer before the hard cap. Anything that still overflows
       // surfaces below with a clear "split the script" message.
       maxOutputTokens: 65535,
-      // Disable thinking — for structured output it just wastes the token budget
-      thinkingConfig: { thinkingBudget: 0 },
+      thinkingConfig: geminiThinkingConfig(model),
     },
   });
+}
+
+async function splitWithGemini(systemPrompt: string, script: string, runId: string): Promise<string> {
+  const apiKey = getSetting("GOOGLE_API_KEY");
+  if (!apiKey) throw new Error("GOOGLE_API_KEY is not set (Settings)");
+
+  // Model fallback chain. 503 "high demand" is per-model capacity: when Google
+  // is congesting the primary model, a DIFFERENT model usually sails straight
+  // through because it sits on a separate capacity pool. So we probe the
+  // primary briefly (~30 s) and, if it keeps 503-ing, pivot to the fallback
+  // model — which then gets the full ~2 h patience. Both default to models with
+  // a 65 535-token output cap, so long chunks are never truncated.
+  const primary = getSetting("SCENE_SPLIT_MODEL") || "gemini-3.1-flash-lite";
+  const fallback = (getSetting("SCENE_SPLIT_FALLBACK_MODEL") || "").trim();
+  const models = fallback && fallback !== primary ? [primary, fallback] : [primary];
 
   return withFallback(
     models,
     (model, isLast) => {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      // Build the body PER MODEL — the thinking-control field differs by family
+      // (see geminiThinkingConfig). Sending the wrong one is what made the 3.1
+      // fallback return non-JSON.
+      const body = buildGeminiBody(systemPrompt, script, model);
       return withRetry(() => geminiGenerateOnce(url, body), {
         // Earlier models pivot fast; the last model gets the full ~2 h patience.
         maxRetries: isLast ? SPLIT_MAX_RETRIES : SPLIT_PROBE_RETRIES,
@@ -332,11 +351,16 @@ async function geminiGenerateOnce(url: string, body: string): Promise<string> {
   }
 
   const json = (await resp.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+    candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
     usageMetadata?: { candidatesTokenCount?: number };
   };
   const cand = json.candidates?.[0];
-  const text = cand?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  // Drop "thought" parts (Gemini 3.x reasoning) — only the answer text is JSON.
+  const text =
+    cand?.content?.parts
+      ?.filter((p) => !p.thought)
+      .map((p) => p.text ?? "")
+      .join("") ?? "";
   const reason = cand?.finishReason;
   if (reason && reason !== "STOP") {
     throw new Error(
@@ -384,20 +408,4 @@ async function splitWithClaude(systemPrompt: string, script: string, runId: stri
     delayMs: (attempt) => backoffMs(attempt, SPLIT_BACKOFF),
     onRetry: logRetry(runId, "Claude"),
   });
-}
-
-/** Extracts the first JSON array from a text response, even if the model added markdown. */
-function extractJson(text: string): unknown {
-  const trimmed = text.trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const match = trimmed.match(/\[[\s\S]*\]/);
-    if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch {}
-    }
-    throw new Error("Could not parse JSON from model response");
-  }
 }

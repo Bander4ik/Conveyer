@@ -40,13 +40,13 @@ const GROUPS: Group[] = [
       },
       {
         key: "SCENE_SPLIT_MODEL",
-        desc: "Specific model id. Default is the pinned stable `gemini-2.5-flash`. Avoid the floating `-latest` alias — Google can repoint it to a newer preview model that's more prone to 503 \"high demand\" errors and drift. For Anthropic use the full model id.",
-        examples: "gemini-2.5-flash, gemini-2.5-pro, gemini-flash-latest, claude-sonnet-4-6",
+        desc: "Specific model id. Default is `gemini-3.1-flash-lite` — it shrugs off Google's 503 \"high demand\" spells better than 2.5-flash and has a 64k output cap (safe for long scripts). Avoid the floating `-latest` alias — Google can repoint it to a capacity-tight preview. For Anthropic use the full model id.",
+        examples: "gemini-3.1-flash-lite, gemini-2.5-flash, gemini-2.5-pro, claude-sonnet-4-6",
       },
       {
         key: "SCENE_SPLIT_FALLBACK_MODEL",
-        desc: "Google only. If the primary model keeps returning 503 \"high demand\", the run automatically pivots to this model — it's on a separate capacity pool, so it usually works while the primary is congested. Leave blank to disable. Use a 2.5/3.x-family model (64k output) so long scripts aren't truncated.",
-        examples: "gemini-3.1-flash-lite, gemini-2.5-flash-lite",
+        desc: "Google only. If the primary model keeps returning 503 \"high demand\", the run automatically pivots to this model — it's on a separate capacity pool, so it usually works while the primary is congested. Default `gemini-2.5-flash`. Leave blank to disable. Use a 2.5/3.x-family model (64k output) so long scripts aren't truncated.",
+        examples: "gemini-2.5-flash, gemini-2.5-flash-lite",
       },
     ],
   },

@@ -158,12 +158,13 @@ export const DEFAULTS: Record<SettingKey, string> = {
 
   // Scene split
   SCENE_SPLIT_PROVIDER: "google",
-  SCENE_SPLIT_MODEL: "gemini-2.5-flash",
-  // When the primary model keeps 503-ing, scene-split auto-pivots here. A
-  // different model sits on a separate capacity pool, so it sails through the
-  // congestion. gemini-3.1-flash-lite: GA, cheap, 65 535-token output (safe for
-  // long chunks). Empty = no fallback. Seeded for existing installs on next start.
-  SCENE_SPLIT_FALLBACK_MODEL: "gemini-3.1-flash-lite",
+  // gemini-3.1-flash-lite is the primary: it holds up under Google's 503 "high
+  // demand" spells far better than 2.5-flash, has a 65 535-token output cap
+  // (safe for long chunks) and is cheap. gemini-2.5-flash is the fallback.
+  SCENE_SPLIT_MODEL: "gemini-3.1-flash-lite",
+  // When the primary keeps 503-ing, scene-split auto-pivots here (a different
+  // model = a separate capacity pool). Empty = no fallback.
+  SCENE_SPLIT_FALLBACK_MODEL: "gemini-2.5-flash",
 
   // TTS — runs through 69labs; ElevenLabs is the high-quality voice family and
   // the intended default (the voice fine-tuning below is all ElevenLabs-specific).

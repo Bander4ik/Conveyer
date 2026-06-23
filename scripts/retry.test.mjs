@@ -8,6 +8,7 @@
 // No dependencies, no node_modules required (retry.ts is dependency-free).
 import assert from "node:assert/strict";
 import { backoffMs, withRetry, withFallback, RetryableError, formatWait } from "../src/lib/retry.ts";
+import { extractJson } from "../src/lib/json-extract.ts";
 
 let passed = 0;
 const ok = (label) => { console.log(`  ✓ ${label}`); passed++; };
@@ -188,6 +189,29 @@ console.log("Realistic scene-split: primary 503s through its probe, fallback sav
   assert.equal(calls["gemini-3.1-flash-lite"], 1, "fallback succeeded on the first try");
   assert.deepEqual(primaryWaits, [2000, 4000, 8000, 16000], "primary used the short ~30s probe budget, not the full 2h");
   ok("primary probed briefly → pivoted to fallback → run completed");
+}
+
+// ── 8. Robust JSON extraction (the gemini-3.1-flash-lite parse crash) ────────
+console.log("extractJson (survives reasoning text / markdown around the array):");
+{
+  const scenes = '[{"text":"a","visual_prompt":"x","duration_hint_sec":6}]';
+
+  assert.deepEqual(extractJson(scenes), [{ text: "a", visual_prompt: "x", duration_hint_sec: 6 }]);
+  ok("parses a clean array");
+
+  assert.equal(extractJson("```json\n" + scenes + "\n```").length, 1);
+  ok("strips a ```json code fence");
+
+  // The reported crash: reasoning text (with a stray bracket) BEFORE the array
+  const polluted = "Let me think about the scenes [step 1]. Here is the JSON:\n" + scenes;
+  assert.deepEqual(extractJson(polluted), [{ text: "a", visual_prompt: "x", duration_hint_sec: 6 }]);
+  ok("recovers the array even after reasoning text + a stray '['");
+
+  assert.equal(extractJson("hmm [ then " + scenes).length, 1);
+  ok("ignores an unbalanced stray '[' and finds the real array");
+
+  assert.throws(() => extractJson('[{"text":"a", "visual_prompt'), /Could not parse/);
+  ok("throws on truly broken output instead of guessing");
 }
 
 console.log(`\n${passed} checks passed ✅`);
