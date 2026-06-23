@@ -5,6 +5,7 @@ import { getSetting } from "../settings";
 import { getPrompt } from "../prompts";
 import { log } from "../logger";
 import { getRunDir } from "../run-paths";
+import { withRetry, backoffMs, formatWait, RetryableError } from "../retry";
 
 export interface Scene {
   index: number;
@@ -124,9 +125,9 @@ async function splitOneChunk(
 ): Promise<Scene[]> {
   let raw: string;
   if (provider === "google") {
-    raw = await splitWithGemini(systemPrompt, scriptChunk);
+    raw = await splitWithGemini(systemPrompt, scriptChunk, runId);
   } else if (provider === "anthropic") {
-    raw = await splitWithClaude(systemPrompt, scriptChunk);
+    raw = await splitWithClaude(systemPrompt, scriptChunk, runId);
   } else {
     throw new Error(`Unknown SCENE_SPLIT_PROVIDER: ${provider}`);
   }
@@ -203,10 +204,54 @@ function chunkScript(script: string, targetWords: number): string[] {
   return chunks;
 }
 
-async function splitWithGemini(systemPrompt: string, script: string): Promise<string> {
+// ── Transient-failure policy for scene-split ──────────────────────────────
+//
+// Gemini "This model is currently experiencing high demand" (503 UNAVAILABLE)
+// can persist for MINUTES, not seconds. The old policy retried 4× over ~15 s
+// total and then crashed the whole run — so a brief capacity spike at the very
+// first stage threw away the entire job. We now wait it out the same way the
+// 69labs path does (services/labs69.ts): fast at first (most blips clear in
+// seconds), escalating to a 15-minute ceiling, for a total window of ~2 h
+// before finally giving up. Each wait is logged to the run so the user sees
+// "paused, retrying" instead of a silent gap followed by a crash.
+const HTTP_RETRYABLE = new Set([429, 500, 502, 503, 504]);
+// Anthropic adds 529 (Overloaded) and 408/409 to the transient set.
+const CLAUDE_RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
+const SPLIT_MAX_RETRIES = 15; // 16 tries total
+const SPLIT_BACKOFF = { baseMs: 2000, factor: 2, capMs: 15 * 60_000 }; // 2s,4s,…→15min; ~2 h total
+// A hung connection must not stall the run forever. A ~3 000-word chunk →
+// up to ~54 K output tokens is well under 3 min on flash; beyond that we abort
+// and retry rather than hang.
+const GEMINI_REQUEST_TIMEOUT_MS = 3 * 60_000;
+
+/** Shared onRetry logger — surfaces each backoff wait in the run log. */
+function logRetry(runId: string, provider: string) {
+  return ({ attempt, maxRetries, waitMs, err }: { attempt: number; maxRetries: number; waitMs: number; err: unknown }) => {
+    const reason = err instanceof RetryableError && err.status ? `HTTP ${err.status}` : "transient error";
+    log(
+      runId,
+      "warn",
+      `${provider} unavailable (${reason}) — waiting ${formatWait(waitMs)} then retrying (${attempt}/${maxRetries}). The run is paused, not failing.`,
+      { stage: "scene_split" }
+    );
+  };
+}
+
+/** fetch with an abort timeout — a hung connection must not stall the run forever. */
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function splitWithGemini(systemPrompt: string, script: string, runId: string): Promise<string> {
   const apiKey = getSetting("GOOGLE_API_KEY");
   if (!apiKey) throw new Error("GOOGLE_API_KEY is not set (Settings)");
-  const model = getSetting("SCENE_SPLIT_MODEL") || "gemini-flash-latest";
+  const model = getSetting("SCENE_SPLIT_MODEL") || "gemini-2.5-flash";
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = JSON.stringify({
@@ -225,68 +270,92 @@ async function splitWithGemini(systemPrompt: string, script: string): Promise<st
     },
   });
 
-  // Retry with exponential backoff for transient errors
-  // (503 UNAVAILABLE / 429 RATE_LIMIT / 500 — common Google API blips)
-  const RETRYABLE = new Set([429, 500, 502, 503, 504]);
-  const MAX_RETRIES = 4;
-  let attempt = 0;
-  let lastErr = "";
-
-  while (attempt <= MAX_RETRIES) {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-    });
-    if (resp.ok) {
-      const json = (await resp.json()) as {
-        candidates?: {
-          content?: { parts?: { text?: string }[] };
-          finishReason?: string;
-        }[];
-        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
-      };
-      const cand = json.candidates?.[0];
-      const text = cand?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-      const reason = cand?.finishReason;
-      if (reason && reason !== "STOP") {
-        throw new Error(
-          `Gemini finish=${reason} (output cut off, tokens=${json.usageMetadata?.candidatesTokenCount}). ` +
-            `Even a single ~3 000-word chunk produced more than Gemini's 65 535-token output cap — ` +
-            `try lowering WORDS_PER_CHUNK in scene-split.ts, or shorten this script chunk's visual_prompt instructions.`
-        );
-      }
-      if (!text) throw new Error(`Gemini: empty output (${JSON.stringify(json).slice(0, 300)})`);
-      return text;
-    }
-    const errText = (await resp.text()).slice(0, 400);
-    lastErr = `Gemini ${resp.status}: ${errText}`;
-    if (!RETRYABLE.has(resp.status) || attempt === MAX_RETRIES) {
-      throw new Error(lastErr);
-    }
-    // 1s, 2s, 4s, 8s
-    const waitMs = 1000 * Math.pow(2, attempt);
-    await new Promise((r) => setTimeout(r, waitMs));
-    attempt++;
-  }
-  throw new Error(lastErr);
+  return withRetry(() => geminiGenerateOnce(url, body), {
+    maxRetries: SPLIT_MAX_RETRIES,
+    isRetryable: (e) => e instanceof RetryableError,
+    delayMs: (attempt) => backoffMs(attempt, SPLIT_BACKOFF),
+    onRetry: logRetry(runId, "Gemini"),
+  });
 }
 
-async function splitWithClaude(systemPrompt: string, script: string): Promise<string> {
+/**
+ * One Gemini generateContent call. Throws {@link RetryableError} for transient
+ * failures (429/5xx, network blip, timeout) so withRetry waits them out;
+ * throws a plain Error for permanent problems (bad key, output cut off) so they
+ * surface immediately instead of looping for 2 hours.
+ */
+async function geminiGenerateOnce(url: string, body: string): Promise<string> {
+  let resp: Response;
+  try {
+    resp = await fetchWithTimeout(
+      url,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body },
+      GEMINI_REQUEST_TIMEOUT_MS
+    );
+  } catch (e) {
+    // Network error or aborted (timeout) — transient, wait and retry.
+    throw new RetryableError(`Gemini request failed: ${(e as Error).message}`);
+  }
+
+  if (!resp.ok) {
+    const msg = `Gemini ${resp.status}: ${(await resp.text()).slice(0, 400)}`;
+    if (HTTP_RETRYABLE.has(resp.status)) throw new RetryableError(msg, resp.status);
+    throw new Error(msg); // 4xx (bad key / bad request) — retrying won't help
+  }
+
+  const json = (await resp.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+    usageMetadata?: { candidatesTokenCount?: number };
+  };
+  const cand = json.candidates?.[0];
+  const text = cand?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  const reason = cand?.finishReason;
+  if (reason && reason !== "STOP") {
+    throw new Error(
+      `Gemini finish=${reason} (output cut off, tokens=${json.usageMetadata?.candidatesTokenCount}). ` +
+        `Even a single ~3 000-word chunk produced more than Gemini's 65 535-token output cap — ` +
+        `try lowering WORDS_PER_CHUNK in scene-split.ts, or shorten this script chunk's visual_prompt instructions.`
+    );
+  }
+  if (!text) throw new Error(`Gemini: empty output (${JSON.stringify(json).slice(0, 300)})`);
+  return text;
+}
+
+async function splitWithClaude(systemPrompt: string, script: string, runId: string): Promise<string> {
   const apiKey = getSetting("ANTHROPIC_API_KEY");
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set (Settings)");
   const model = getSetting("SCENE_SPLIT_MODEL") || "claude-sonnet-4-6";
-  const client = new Anthropic({ apiKey });
-  const resp = await client.messages.create({
-    model,
-    max_tokens: 8000,
-    system: systemPrompt,
-    messages: [{ role: "user", content: `Script:\n\n${script}` }],
+  // Disable the SDK's own short retries; withRetry owns the long-wait policy so
+  // a sustained 529 Overloaded waits out the same ~2 h window as Gemini.
+  const client = new Anthropic({ apiKey, maxRetries: 0 });
+
+  const callOnce = async (): Promise<string> => {
+    try {
+      const resp = await client.messages.create({
+        model,
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: `Script:\n\n${script}` }],
+      });
+      return resp.content
+        .filter((b) => b.type === "text")
+        .map((b) => (b as { type: "text"; text: string }).text)
+        .join("\n");
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      if (status !== undefined && CLAUDE_RETRYABLE.has(status)) {
+        throw new RetryableError(`Claude ${status}: ${(e as Error).message}`, status);
+      }
+      throw e;
+    }
+  };
+
+  return withRetry(callOnce, {
+    maxRetries: SPLIT_MAX_RETRIES,
+    isRetryable: (e) => e instanceof RetryableError,
+    delayMs: (attempt) => backoffMs(attempt, SPLIT_BACKOFF),
+    onRetry: logRetry(runId, "Claude"),
   });
-  return resp.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("\n");
 }
 
 /** Extracts the first JSON array from a text response, even if the model added markdown. */

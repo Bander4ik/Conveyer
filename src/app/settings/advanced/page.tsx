@@ -40,8 +40,8 @@ const GROUPS: Group[] = [
       },
       {
         key: "SCENE_SPLIT_MODEL",
-        desc: "Specific model id. For Google, the `-latest` alias auto-tracks the current stable Flash. For Anthropic use the full model id.",
-        examples: "gemini-flash-latest, gemini-2.5-flash, gemini-2.5-pro, claude-sonnet-4-6",
+        desc: "Specific model id. Default is the pinned stable `gemini-2.5-flash`. Avoid the floating `-latest` alias — Google can repoint it to a newer preview model that's more prone to 503 \"high demand\" errors and drift. For Anthropic use the full model id.",
+        examples: "gemini-2.5-flash, gemini-2.5-pro, gemini-flash-latest, claude-sonnet-4-6",
       },
     ],
   },

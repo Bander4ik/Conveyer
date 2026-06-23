@@ -128,7 +128,7 @@ Every stage logs to the database AND streams to the UI in real time over SSE.
 ### Defaults at a glance
 | Stage | Default | Change in |
 |---|---|---|
-| Scene split | Gemini `gemini-flash-latest` | /settings |
+| Scene split | Gemini `gemini-2.5-flash` | /settings |
 | Voiceover | 69labs → ElevenLabs "Christopher", model `eleven_multilingual_v2`, speed 0.93 | /settings |
 | Images | 69labs `nano-banana-pro`, 16:9, 1k | /settings |
 | Animation | 69labs `veo-video`, 50% of scenes, first-half | /settings |

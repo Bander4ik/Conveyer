@@ -35,5 +35,15 @@ export function ensureInit() {
     if (!getSetting("TTS_MODEL")) setSetting("TTS_MODEL", "eleven_multilingual_v2");
   }
 
+  // One-time migration: the old SCENE_SPLIT_MODEL default was the floating
+  // alias "gemini-flash-latest". Google can repoint that alias to a brand-new,
+  // often capacity-constrained preview model — a frequent source of 503 "high
+  // demand" failures and scene-split drift. Pin existing DBs still on that exact
+  // legacy alias to the stable GA model "gemini-2.5-flash". A deliberate choice
+  // (gemini-2.5-pro, a claude-* model, etc.) is left untouched.
+  if (getSetting("SCENE_SPLIT_MODEL") === "gemini-flash-latest") {
+    setSetting("SCENE_SPLIT_MODEL", "gemini-2.5-flash");
+  }
+
   inited = true;
 }

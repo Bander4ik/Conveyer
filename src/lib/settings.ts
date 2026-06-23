@@ -22,7 +22,7 @@ export const SETTING_KEYS = [
 
   // ── Scene splitting (LLM) ─────────────────────────────────────────
   "SCENE_SPLIT_PROVIDER",    // google | anthropic
-  "SCENE_SPLIT_MODEL",       // e.g. gemini-flash-latest, claude-sonnet-4-6
+  "SCENE_SPLIT_MODEL",       // e.g. gemini-2.5-flash, claude-sonnet-4-6
 
   // ── Text-to-Speech ────────────────────────────────────────────────
   "TTS_PROVIDER",            // 69labs | elevenlabs | openai
@@ -157,7 +157,7 @@ export const DEFAULTS: Record<SettingKey, string> = {
 
   // Scene split
   SCENE_SPLIT_PROVIDER: "google",
-  SCENE_SPLIT_MODEL: "gemini-flash-latest",
+  SCENE_SPLIT_MODEL: "gemini-2.5-flash",
 
   // TTS — runs through 69labs; ElevenLabs is the high-quality voice family and
   // the intended default (the voice fine-tuning below is all ElevenLabs-specific).

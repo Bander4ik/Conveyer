@@ -189,7 +189,7 @@ export async function findSimilarClips(
   const apiKey = getSetting("GOOGLE_API_KEY");
   if (!apiKey) throw new Error("GOOGLE_API_KEY is not set — needed for AI matching");
 
-  const model = getSetting("SCENE_SPLIT_MODEL") || "gemini-flash-latest";
+  const model = getSetting("SCENE_SPLIT_MODEL") || "gemini-2.5-flash";
 
   const systemPrompt = `You are matching scene clips from a video library to NEW scenes in a video we're about to generate. For each new scene, find the most visually and tonally similar clips from the library that could be reused instead of generating from scratch.
 
