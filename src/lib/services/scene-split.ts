@@ -5,7 +5,7 @@ import { getSetting } from "../settings";
 import { getPrompt } from "../prompts";
 import { log } from "../logger";
 import { getRunDir } from "../run-paths";
-import { withRetry, backoffMs, formatWait, RetryableError } from "../retry";
+import { withRetry, withFallback, backoffMs, formatWait, RetryableError } from "../retry";
 
 export interface Scene {
   index: number;
@@ -217,7 +217,8 @@ function chunkScript(script: string, targetWords: number): string[] {
 const HTTP_RETRYABLE = new Set([429, 500, 502, 503, 504]);
 // Anthropic adds 529 (Overloaded) and 408/409 to the transient set.
 const CLAUDE_RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
-const SPLIT_MAX_RETRIES = 15; // 16 tries total
+const SPLIT_MAX_RETRIES = 15; // 16 tries total — the LAST model in the chain gets this full ~2 h patience
+const SPLIT_PROBE_RETRIES = 4; // earlier models in the chain: ~30 s (2+4+8+16) before pivoting to the fallback
 const SPLIT_BACKOFF = { baseMs: 2000, factor: 2, capMs: 15 * 60_000 }; // 2s,4s,…→15min; ~2 h total
 // A hung connection must not stall the run forever. A ~3 000-word chunk →
 // up to ~54 K output tokens is well under 3 min on flash; beyond that we abort
@@ -251,31 +252,58 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
 async function splitWithGemini(systemPrompt: string, script: string, runId: string): Promise<string> {
   const apiKey = getSetting("GOOGLE_API_KEY");
   if (!apiKey) throw new Error("GOOGLE_API_KEY is not set (Settings)");
-  const model = getSetting("SCENE_SPLIT_MODEL") || "gemini-2.5-flash";
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  // Model fallback chain. 503 "high demand" is per-model capacity: when Google
+  // is congesting the primary model, a DIFFERENT model usually sails straight
+  // through because it sits on a separate capacity pool. So we probe the
+  // primary briefly (~30 s) and, if it keeps 503-ing, pivot to the fallback
+  // model — which then gets the full ~2 h patience. Both default to models with
+  // a 65 535-token output cap, so long chunks are never truncated.
+  const primary = getSetting("SCENE_SPLIT_MODEL") || "gemini-2.5-flash";
+  const fallback = (getSetting("SCENE_SPLIT_FALLBACK_MODEL") || "").trim();
+  const models = fallback && fallback !== primary ? [primary, fallback] : [primary];
+
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: "user", parts: [{ text: `Script:\n\n${script}` }] }],
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.7,
-      // 65535 — Gemini 2.5 Flash/Pro hard max for output. Per-chunk we target
-      // ~3 000 words of input → ~54 K of output, leaving an 11 K-token buffer
-      // before the hard cap. Anything that still overflows surfaces below
-      // with a clear "split the script" message.
+      // 65535 — output cap shared by gemini-2.5-flash and gemini-3.1-flash-lite.
+      // Per-chunk we target ~3 000 words of input → ~54 K of output, leaving an
+      // 11 K-token buffer before the hard cap. Anything that still overflows
+      // surfaces below with a clear "split the script" message.
       maxOutputTokens: 65535,
       // Disable thinking — for structured output it just wastes the token budget
       thinkingConfig: { thinkingBudget: 0 },
     },
   });
 
-  return withRetry(() => geminiGenerateOnce(url, body), {
-    maxRetries: SPLIT_MAX_RETRIES,
-    isRetryable: (e) => e instanceof RetryableError,
-    delayMs: (attempt) => backoffMs(attempt, SPLIT_BACKOFF),
-    onRetry: logRetry(runId, "Gemini"),
-  });
+  return withFallback(
+    models,
+    (model, isLast) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      return withRetry(() => geminiGenerateOnce(url, body), {
+        // Earlier models pivot fast; the last model gets the full ~2 h patience.
+        maxRetries: isLast ? SPLIT_MAX_RETRIES : SPLIT_PROBE_RETRIES,
+        isRetryable: (e) => e instanceof RetryableError,
+        delayMs: (attempt) => backoffMs(attempt, SPLIT_BACKOFF),
+        onRetry: logRetry(runId, model),
+      });
+    },
+    {
+      // Pivot ONLY on a transient (503-type) exhaustion. A real error (bad key,
+      // bad request) would fail the fallback the same way — surface it instead.
+      isRetryable: (e) => e instanceof RetryableError,
+      onFallback: (from, to) =>
+        log(
+          runId,
+          "warn",
+          `${from} still unavailable after ${SPLIT_PROBE_RETRIES + 1} attempts — switching to fallback model ${to}`,
+          { stage: "scene_split" }
+        ),
+    }
+  );
 }
 
 /**

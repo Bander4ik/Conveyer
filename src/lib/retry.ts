@@ -76,3 +76,35 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Pr
 export function formatWait(ms: number): string {
   return ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)}s`;
 }
+
+/**
+ * Try `attempt(item)` for each item in order until one succeeds. If a NON-last
+ * item fails with a retryable error, move on to the next item (calling
+ * `onFallback`); a non-retryable error, or the last item's error, propagates.
+ *
+ * Used by scene-split to probe a primary model briefly and then pivot to a
+ * fallback model when the primary keeps returning 503 — the fallback sits on a
+ * separate capacity pool, so it usually works while the primary is congested.
+ */
+export async function withFallback<I, T>(
+  items: I[],
+  attempt: (item: I, isLast: boolean, index: number) => Promise<T>,
+  opts: { isRetryable: (err: unknown) => boolean; onFallback?: (from: I, to: I) => void }
+): Promise<T> {
+  if (items.length === 0) throw new Error("withFallback: no items to try");
+  let lastErr: unknown;
+  for (let i = 0; i < items.length; i++) {
+    const isLast = i === items.length - 1;
+    try {
+      return await attempt(items[i], isLast, i);
+    } catch (err) {
+      lastErr = err;
+      if (opts.isRetryable(err) && !isLast) {
+        opts.onFallback?.(items[i], items[i + 1]);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
